@@ -31,11 +31,11 @@ class JobBuildTest {
         RunContext runContext = runContextFactory.of(Map.of());
 
         JobBuild jobBuild = JobBuild.builder()
-            .jobName(Property.of("test-job"))
-            .parameters(Property.of(Map.of("param1", "value1")))
-            .username(Property.of("admin"))
-            .apiToken(Property.of("demo"))
-            .serverUrl(Property.of(wm.getHttpBaseUrl()))
+            .jobName(Property.ofValue("test-job"))
+            .parameters(Property.ofValue(Map.of("param1", "value1")))
+            .username(Property.ofValue("admin"))
+            .apiToken(Property.ofValue("demo"))
+            .serverUrl(Property.ofValue(wm.getHttpBaseUrl()))
             .build();
 
         JobBuild.Output output = jobBuild.run(runContext);

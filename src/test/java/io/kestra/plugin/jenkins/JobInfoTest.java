@@ -40,9 +40,9 @@ class JobInfoTest {
         JobInfo task = JobInfo.builder()
             .jobName("test-job")
             .buildNumber(1)
-            .username(Property.of("admin"))
-            .apiToken(Property.of("token"))
-            .serverUrl(Property.of(wm.getHttpBaseUrl()))
+            .username(Property.ofValue("admin"))
+            .apiToken(Property.ofValue("token"))
+            .serverUrl(Property.ofValue(wm.getHttpBaseUrl()))
             .build();
 
         JobInfo.Output output = task.run(runContext);
