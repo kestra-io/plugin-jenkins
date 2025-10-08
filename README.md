@@ -19,9 +19,12 @@
 <br />
 
 <p align="center">
-    <a href="https://twitter.com/kestra_io"><img height="25" src="https://kestra.io/twitter.svg" alt="twitter" /></a> &nbsp;
-    <a href="https://www.linkedin.com/company/kestra/"><img height="25" src="https://kestra.io/linkedin.svg" alt="linkedin" /></a> &nbsp;
-<a href="https://www.youtube.com/@kestra-io"><img height="25" src="https://kestra.io/youtube.svg" alt="youtube" /></a> &nbsp;
+  <a href="https://twitter.com/kestra_io" style="margin: 0 10px;">
+        <img src="https://kestra.io/twitter.svg" alt="twitter" width="35" height="25" /></a>
+  <a href="https://www.linkedin.com/company/kestra/" style="margin: 0 10px;">
+        <img src="https://kestra.io/linkedin.svg" alt="linkedin" width="35" height="25" /></a>
+  <a href="https://www.youtube.com/@kestra-io" style="margin: 0 10px;">
+        <img src="https://kestra.io/youtube.svg" alt="youtube" width="35" height="25" /></a>
 </p>
 
 <br />
@@ -37,28 +40,6 @@
 
 > A Jenkins plugin for Kestra.
 
-This repository serves as a general template for creating a new [Kestra](https://github.com/kestra-io/kestra) plugin. It should take only a few minutes! Use this repository as a scaffold to ensure that you've set up the plugin correctly, including unit tests and CI/CD workflows.
-
-![Kestra orchestrator](https://kestra.io/video.gif)
-
-## Running the project in local
-### Prerequisites
-- Java 21
-- Docker
-
-### Running tests
-```
-./gradlew check --parallel
-```
-
-### Launching the whole app
-```
-./gradlew shadowJar && docker build -t kestra-custom . && docker run --rm -p 8080:8080 kestra-custom server local
-```
-> [!NOTE]
-> You need to relaunch this whole command everytime you make a change to your plugin
-
-go to http://localhost:8080, your plugin will be available to use
 
 ## Documentation
 * Full documentation can be found under: [kestra.io/docs](https://kestra.io/docs)
