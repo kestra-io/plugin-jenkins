@@ -1,8 +1,8 @@
 group: io.kestra.plugin.jenkins
 name: "jenkins"
 title: "Jenkins"
-description: "This sub-group of plugins contains tasks for interacting with Jenkins from Kestra. Jenkins is an open-source automation server used to build, test, and deploy software projects."
-body: ""
+description: "Tasks that trigger Jenkins jobs and retrieve build or job metadata."
+body: "Provide the Jenkins `serverUrl` with a username and API token to start parameterized builds and query job or build details; the tasks handle crumb headers via the HTTP configuration and surface queue, status, and artifact information for orchestration."
 videos: []
 createdBy: "Kestra Core Team"
 managedBy: "Kestra Core Team"
