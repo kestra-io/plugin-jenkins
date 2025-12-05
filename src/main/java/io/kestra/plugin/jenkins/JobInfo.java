@@ -37,7 +37,7 @@ import java.util.stream.Collectors;
                   - id: info
                     type: io.kestra.plugin.jenkins.JobInfo
                     username: admin
-                    apiToken: my_api_token
+                    apiToken: "{{ secret('JENKINS_API_TOKEN') }}"
                     jobName: test
                     buildNumber: 1
                     serverUri: http://localhost:8080

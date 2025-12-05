@@ -44,7 +44,7 @@ import java.util.stream.Collectors;
                     jobName: deploy-app
                     serverUri: http://localhost:8080
                     username: admin
-                    api_token: my_api_token
+                    apiToken: "{{ secret('JENKINS_API_TOKEN') }}"
                     parameters:
                       branch: main
                       environment:
