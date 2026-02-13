@@ -24,7 +24,8 @@ import java.util.stream.Collectors;
 @ToString
 @EqualsAndHashCode
 @Schema(
-    title = "Get Jenkins job build info."
+    title = "Fetch Jenkins build details",
+    description = "Retrieves a build JSON payload from Jenkins `/api/json`, URL-encoding foldered job paths and using Basic Auth when credentials are set."
 )
 @Plugin(
     examples = {
@@ -48,9 +49,17 @@ import java.util.stream.Collectors;
 @SuppressWarnings("unchecked")
 public class JobInfo extends AbstractJenkins implements RunnableTask<JobInfo.Output> {
 
+    @Schema(
+        title = "Jenkins job path",
+        description = "Job name or foldered path using `/`; each segment is URL-encoded."
+    )
     @NotNull
     private String jobName;
 
+    @Schema(
+        title = "Build number",
+        description = "Required Jenkins build number to fetch; must exist on the target job."
+    )
     @NotNull
     private Integer buildNumber;
 
