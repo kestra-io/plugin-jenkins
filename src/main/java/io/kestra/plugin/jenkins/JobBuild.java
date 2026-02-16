@@ -26,8 +26,8 @@ import java.util.stream.Collectors;
 @EqualsAndHashCode
 @NoArgsConstructor
 @Schema(
-    title = "Trigger a Jenkins job.",
-    description = "Starts a Jenkins job using the buildWithParameters endpoint."
+    title = "Trigger a Jenkins job build",
+    description = "Calls Jenkins buildWithParameters to enqueue a build, URL-encoding foldered job names and form parameters; uses Basic Auth when credentials are provided."
 )
 @Plugin(
     examples = {
@@ -55,11 +55,17 @@ import java.util.stream.Collectors;
 )
 public class JobBuild extends AbstractJenkins implements RunnableTask<JobBuild.Output> {
 
-    @Schema(title = "Jenkins job name (can be foldered using `/`, e.g., 'team/project/job')")
+    @Schema(
+        title = "Jenkins job path",
+        description = "Job name or foldered path using `/` (e.g., `team/project/job`); each segment is URL-encoded."
+    )
     @NotNull
     private Property<String> jobName;
 
-    @Schema(title = "Parameters for the job")
+    @Schema(
+        title = "Build parameters",
+        description = "Optional map sent as form data to Jenkins; values are rendered then URL-encoded."
+    )
     private Property<Map<String, Object>> parameters;
 
     @Override
