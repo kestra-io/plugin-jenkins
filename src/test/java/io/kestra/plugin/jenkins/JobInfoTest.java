@@ -1,15 +1,18 @@
 package io.kestra.plugin.jenkins;
 
+import java.util.Map;
+
+import org.junit.jupiter.api.Test;
+
 import com.github.tomakehurst.wiremock.junit5.WireMockRuntimeInfo;
 import com.github.tomakehurst.wiremock.junit5.WireMockTest;
+
 import io.kestra.core.junit.annotations.KestraTest;
 import io.kestra.core.models.property.Property;
 import io.kestra.core.runners.RunContext;
 import io.kestra.core.runners.RunContextFactory;
-import jakarta.inject.Inject;
-import org.junit.jupiter.api.Test;
 
-import java.util.Map;
+import jakarta.inject.Inject;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.*;
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -32,8 +35,10 @@ class JobInfoTest {
             }
             """;
 
-        stubFor(get(urlEqualTo("/job/test-job/1/api/json"))
-            .willReturn(okJson(buildInfoJson)));
+        stubFor(
+            get(urlEqualTo("/job/test-job/1/api/json"))
+                .willReturn(okJson(buildInfoJson))
+        );
 
         RunContext runContext = runContextFactory.of(Map.of());
 

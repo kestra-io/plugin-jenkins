@@ -1,22 +1,22 @@
 package io.kestra.plugin.jenkins;
 
-import io.kestra.core.models.annotations.Example;
-import io.kestra.core.models.annotations.Plugin;
-
-import io.kestra.core.models.tasks.RunnableTask;
-import io.kestra.core.runners.RunContext;
-import io.kestra.core.http.HttpRequest;
-import io.swagger.v3.oas.annotations.media.Schema;
-import jakarta.validation.constraints.NotNull;
-import lombok.*;
-import lombok.experimental.SuperBuilder;
-
 import java.net.URI;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.stream.Collectors;
+
+import io.kestra.core.http.HttpRequest;
+import io.kestra.core.models.annotations.Example;
+import io.kestra.core.models.annotations.Plugin;
+import io.kestra.core.models.tasks.RunnableTask;
+import io.kestra.core.runners.RunContext;
+
+import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.constraints.NotNull;
+import lombok.*;
+import lombok.experimental.SuperBuilder;
 
 @SuperBuilder
 @Getter
@@ -66,7 +66,8 @@ public class JobInfo extends AbstractJenkins implements RunnableTask<JobInfo.Out
     @Override
     public Output run(RunContext runContext) throws Exception {
         String base = runContext.render(serverUrl).as(String.class).orElseThrow();
-        if (!base.endsWith("/")) base += "/";
+        if (!base.endsWith("/"))
+            base += "/";
 
         String jobPath = Arrays.stream(jobName.split("/"))
             .map(part -> "job/" + URLEncoder.encode(part, StandardCharsets.UTF_8))
@@ -79,7 +80,6 @@ public class JobInfo extends AbstractJenkins implements RunnableTask<JobInfo.Out
             .method("GET");
 
         Map<String, Object> buildInfo = this.request(runContext, request, Map.class).getBody();
-
 
         return Output.builder()
             .info(buildInfo)

@@ -1,8 +1,12 @@
 package io.kestra.plugin.jenkins;
 
+import java.io.IOException;
+import java.util.Objects;
+
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+
 import io.kestra.core.exceptions.IllegalVariableEvaluationException;
 import io.kestra.core.http.HttpRequest;
 import io.kestra.core.http.HttpResponse;
@@ -14,13 +18,11 @@ import io.kestra.core.http.client.configurations.HttpConfiguration;
 import io.kestra.core.models.property.Property;
 import io.kestra.core.models.tasks.Task;
 import io.kestra.core.runners.RunContext;
+
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotNull;
 import lombok.*;
 import lombok.experimental.SuperBuilder;
-
-import java.io.IOException;
-import java.util.Objects;
 
 @SuperBuilder
 @ToString
@@ -71,7 +73,7 @@ public abstract class AbstractJenkins extends Task {
                 parsedResponse = MAPPER.readValue(response.getBody(), responseType);
             }
 
-            return HttpResponse.<RES>builder()
+            return HttpResponse.<RES> builder()
                 .request(request)
                 .body(parsedResponse)
                 .headers(response.getHeaders())
@@ -89,8 +91,7 @@ public abstract class AbstractJenkins extends Task {
     }
 
     private HttpConfiguration configureAuthentication() {
-        HttpConfiguration.HttpConfigurationBuilder configBuilder =
-            (options != null) ? options.toBuilder() : HttpConfiguration.builder();
+        HttpConfiguration.HttpConfigurationBuilder configBuilder = (options != null) ? options.toBuilder() : HttpConfiguration.builder();
 
         return configBuilder.auth(
             BasicAuthConfiguration.builder()
