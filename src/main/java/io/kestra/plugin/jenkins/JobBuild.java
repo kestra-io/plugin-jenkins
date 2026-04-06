@@ -21,6 +21,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotNull;
 import lombok.*;
 import lombok.experimental.SuperBuilder;
+import io.kestra.core.models.annotations.PluginProperty;
 
 @SuperBuilder
 @Getter
@@ -62,12 +63,14 @@ public class JobBuild extends AbstractJenkins implements RunnableTask<JobBuild.O
         description = "Job name or foldered path using `/` (e.g., `team/project/job`); each segment is URL-encoded."
     )
     @NotNull
+    @PluginProperty(group = "main")
     private Property<String> jobName;
 
     @Schema(
         title = "Build parameters",
         description = "Optional map sent as form data to Jenkins; values are rendered then URL-encoded."
     )
+    @PluginProperty(group = "main")
     private Property<Map<String, Object>> parameters;
 
     @Override

@@ -17,6 +17,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotNull;
 import lombok.*;
 import lombok.experimental.SuperBuilder;
+import io.kestra.core.models.annotations.PluginProperty;
 
 @SuperBuilder
 @Getter
@@ -54,6 +55,7 @@ public class JobInfo extends AbstractJenkins implements RunnableTask<JobInfo.Out
         description = "Job name or foldered path using `/`; each segment is URL-encoded."
     )
     @NotNull
+    @PluginProperty(group = "main")
     private String jobName;
 
     @Schema(
@@ -61,6 +63,7 @@ public class JobInfo extends AbstractJenkins implements RunnableTask<JobInfo.Out
         description = "Required Jenkins build number to fetch; must exist on the target job."
     )
     @NotNull
+    @PluginProperty(group = "main")
     private Integer buildNumber;
 
     @Override
