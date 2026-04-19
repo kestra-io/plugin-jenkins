@@ -7,8 +7,9 @@
 
 ## Why
 
-- This plugin integrates Kestra with Jenkins.
-- It provides tasks that trigger Jenkins jobs and retrieve build or job metadata.
+- What user problem does this solve? Teams need to trigger Jenkins jobs and retrieve build or job metadata from orchestrated workflows instead of relying on manual console work, ad hoc scripts, or disconnected schedulers.
+- Why would a team adopt this plugin in a workflow? It keeps Jenkins steps in the same Kestra flow as upstream preparation, approvals, retries, notifications, and downstream systems.
+- What operational/business outcome does it enable? It reduces manual handoffs and fragmented tooling while improving reliability, traceability, and delivery speed for processes that depend on Jenkins.
 
 ## How
 
