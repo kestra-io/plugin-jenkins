@@ -47,14 +47,14 @@ public abstract class AbstractJenkins extends Task {
         title = "Jenkins username",
         description = "Optional username used for Basic Auth when the server is secured"
     )
-    @PluginProperty(group = "connection")
+    @PluginProperty(secret = true, group = "connection")
     private Property<String> username;
 
     @Schema(
         title = "API token",
         description = "Jenkins API token or password paired with the username for Basic Auth"
     )
-    @PluginProperty(group = "connection")
+    @PluginProperty(group = "connection", secret = true)
     private Property<String> apiToken;
 
     @Schema(
