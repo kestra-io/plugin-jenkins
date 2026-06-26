@@ -32,6 +32,7 @@ import io.kestra.core.models.annotations.PluginProperty;
     examples = {
         @Example(
             title = "Get info about a specific build",
+            full = true,
             code = """
                 id: get_info
                 namespace: company.team
