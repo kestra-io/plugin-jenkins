@@ -4,7 +4,7 @@ Trigger Jenkins builds and fetch build information from Kestra flows.
 
 ## Authentication
 
-Set `serverUrl` to your Jenkins instance URL, `username` to your Jenkins user, and `apiToken` to your Jenkins API token. Store credentials in [secrets](https://kestra.io/docs/concepts/secret) and apply them globally with [plugin defaults](https://kestra.io/docs/workflow-components/plugin-defaults).
+Set `serverUrl` to your Jenkins instance URL, `username` to your Jenkins user, and `apiToken` to your Jenkins API token. Store credentials in [secrets](https://kestra.io/docs/concepts/secret) and set them on each task.
 
 ## Tasks
 
