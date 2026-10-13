@@ -16,7 +16,9 @@ import jakarta.inject.Inject;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.*;
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.not;
 
 @KestraTest
 @WireMockTest(httpPort = 8082)
@@ -54,5 +56,41 @@ class JobInfoTest {
 
         assertThat(output.getInfo().get("result"), is("SUCCESS"));
         assertThat(output.getInfo().get("duration"), is(1234));
+    }
+
+    @Test
+    void fetchJobInfoWithSpaceInName(WireMockRuntimeInfo wm) throws Exception {
+        var buildInfoJson = """
+            {
+              "fullDisplayName": "My Job #1",
+              "result": "SUCCESS",
+              "duration": 1234
+            }
+            """;
+
+        stubFor(
+            get(urlMatching("/job/.*/1/api/json"))
+                .willReturn(okJson(buildInfoJson))
+        );
+
+        var runContext = runContextFactory.of(Map.of());
+
+        var task = JobInfo.builder()
+            .jobName("My Job")
+            .buildNumber(1)
+            .username(Property.ofValue("admin"))
+            .apiToken(Property.ofValue("token"))
+            .serverUrl(Property.ofValue(wm.getHttpBaseUrl()))
+            .build();
+
+        var output = task.run(runContext);
+
+        assertThat(output.getInfo().get("result"), is("SUCCESS"));
+
+        var requests = findAll(getRequestedFor(urlMatching("/job/.*/1/api/json")));
+        assertThat(requests.size(), is(1));
+        var path = requests.get(0).getUrl();
+        assertThat(path, containsString("%20"));
+        assertThat(path, not(containsString("My+Job")));
     }
 }
