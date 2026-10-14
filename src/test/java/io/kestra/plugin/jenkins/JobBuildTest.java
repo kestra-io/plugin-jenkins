@@ -49,4 +49,50 @@ class JobBuildTest {
 
         assertThat(output.getStatus(), is(201));
     }
+
+    @Test
+    void triggerJenkinsJobWithSpaceInName(WireMockRuntimeInfo wm) throws Exception {
+        stubFor(
+            post(urlEqualTo("/job/My%20Job/buildWithParameters"))
+                .willReturn(aResponse().withStatus(201))
+        );
+
+        var runContext = runContextFactory.of(Map.of());
+
+        var jobBuild = JobBuild.builder()
+            .jobName(Property.ofValue("My Job"))
+            .parameters(Property.ofValue(Map.of("param1", "value1")))
+            .username(Property.ofValue("admin"))
+            .apiToken(Property.ofValue("demo"))
+            .serverUrl(Property.ofValue(wm.getHttpBaseUrl()))
+            .build();
+
+        var output = jobBuild.run(runContext);
+
+        assertThat(output.getStatus(), is(201));
+        verify(postRequestedFor(urlEqualTo("/job/My%20Job/buildWithParameters")));
+    }
+
+    @Test
+    void triggerJenkinsJobInFolder(WireMockRuntimeInfo wm) throws Exception {
+        stubFor(
+            post(urlEqualTo("/job/team/job/My%20Job/buildWithParameters"))
+                .willReturn(aResponse().withStatus(201))
+        );
+
+        var runContext = runContextFactory.of(Map.of());
+
+        var jobBuild = JobBuild.builder()
+            .jobName(Property.ofValue("team/My Job"))
+            .parameters(Property.ofValue(Map.of("param1", "value1")))
+            .username(Property.ofValue("admin"))
+            .apiToken(Property.ofValue("demo"))
+            .serverUrl(Property.ofValue(wm.getHttpBaseUrl()))
+            .build();
+
+        var output = jobBuild.run(runContext);
+
+        assertThat(output.getStatus(), is(201));
+        verify(postRequestedFor(urlEqualTo("/job/team/job/My%20Job/buildWithParameters")));
+    }
 }

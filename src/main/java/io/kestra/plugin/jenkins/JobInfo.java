@@ -1,15 +1,12 @@
 package io.kestra.plugin.jenkins;
 
 import java.net.URI;
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
-import java.util.Arrays;
 import java.util.Map;
-import java.util.stream.Collectors;
 
 import io.kestra.core.http.HttpRequest;
 import io.kestra.core.models.annotations.Example;
 import io.kestra.core.models.annotations.Plugin;
+import io.kestra.core.models.annotations.PluginProperty;
 import io.kestra.core.models.tasks.RunnableTask;
 import io.kestra.core.runners.RunContext;
 
@@ -17,7 +14,6 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotNull;
 import lombok.*;
 import lombok.experimental.SuperBuilder;
-import io.kestra.core.models.annotations.PluginProperty;
 
 @SuperBuilder
 @Getter
@@ -73,9 +69,7 @@ public class JobInfo extends AbstractJenkins implements RunnableTask<JobInfo.Out
         if (!base.endsWith("/"))
             base += "/";
 
-        String jobPath = Arrays.stream(jobName.split("/"))
-            .map(part -> "job/" + URLEncoder.encode(part, StandardCharsets.UTF_8))
-            .collect(Collectors.joining("/"));
+        var jobPath = encodeJobPath(jobName);
 
         URI uri = URI.create(base + jobPath + "/" + buildNumber + "/api/json");
 
