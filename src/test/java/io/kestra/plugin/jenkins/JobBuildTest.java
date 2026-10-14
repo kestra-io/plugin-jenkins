@@ -16,9 +16,7 @@ import jakarta.inject.Inject;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.*;
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.is;
-import static org.hamcrest.Matchers.not;
 
 @KestraTest
 @WireMockTest(httpPort = 8082)
@@ -55,7 +53,7 @@ class JobBuildTest {
     @Test
     void triggerJenkinsJobWithSpaceInName(WireMockRuntimeInfo wm) throws Exception {
         stubFor(
-            post(urlMatching("/job/.*/buildWithParameters"))
+            post(urlEqualTo("/job/My%20Job/buildWithParameters"))
                 .willReturn(aResponse().withStatus(201))
         );
 
@@ -72,11 +70,29 @@ class JobBuildTest {
         var output = jobBuild.run(runContext);
 
         assertThat(output.getStatus(), is(201));
+        verify(postRequestedFor(urlEqualTo("/job/My%20Job/buildWithParameters")));
+    }
 
-        var requests = findAll(postRequestedFor(urlMatching("/job/.*/buildWithParameters")));
-        assertThat(requests.size(), is(1));
-        var path = requests.get(0).getUrl();
-        assertThat(path, containsString("%20"));
-        assertThat(path, not(containsString("My+Job")));
+    @Test
+    void triggerJenkinsJobInFolder(WireMockRuntimeInfo wm) throws Exception {
+        stubFor(
+            post(urlEqualTo("/job/team/job/My%20Job/buildWithParameters"))
+                .willReturn(aResponse().withStatus(201))
+        );
+
+        var runContext = runContextFactory.of(Map.of());
+
+        var jobBuild = JobBuild.builder()
+            .jobName(Property.ofValue("team/My Job"))
+            .parameters(Property.ofValue(Map.of("param1", "value1")))
+            .username(Property.ofValue("admin"))
+            .apiToken(Property.ofValue("demo"))
+            .serverUrl(Property.ofValue(wm.getHttpBaseUrl()))
+            .build();
+
+        var output = jobBuild.run(runContext);
+
+        assertThat(output.getStatus(), is(201));
+        verify(postRequestedFor(urlEqualTo("/job/team/job/My%20Job/buildWithParameters")));
     }
 }

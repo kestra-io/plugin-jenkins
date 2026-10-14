@@ -1,8 +1,6 @@
 package io.kestra.plugin.jenkins;
 
 import java.io.IOException;
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Objects;
 import java.util.stream.Collectors;
@@ -10,6 +8,7 @@ import java.util.stream.Collectors;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import com.google.common.net.UrlEscapers;
 
 import io.kestra.core.exceptions.IllegalVariableEvaluationException;
 import io.kestra.core.http.HttpRequest;
@@ -70,7 +69,7 @@ public abstract class AbstractJenkins extends Task {
 
     protected static String encodeJobPath(String jobName) {
         return Arrays.stream(jobName.split("/"))
-            .map(segment -> "job/" + URLEncoder.encode(segment, StandardCharsets.UTF_8).replace("+", "%20"))
+            .map(segment -> "job/" + UrlEscapers.urlPathSegmentEscaper().escape(segment))
             .collect(Collectors.joining("/"));
     }
 
