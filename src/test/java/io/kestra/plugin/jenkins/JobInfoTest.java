@@ -55,4 +55,66 @@ class JobInfoTest {
         assertThat(output.getInfo().get("result"), is("SUCCESS"));
         assertThat(output.getInfo().get("duration"), is(1234));
     }
+
+    @Test
+    void fetchJobInfoWithSpaceInName(WireMockRuntimeInfo wm) throws Exception {
+        var buildInfoJson = """
+            {
+              "fullDisplayName": "My Job #1",
+              "result": "SUCCESS",
+              "duration": 1234
+            }
+            """;
+
+        stubFor(
+            get(urlEqualTo("/job/My%20Job/1/api/json"))
+                .willReturn(okJson(buildInfoJson))
+        );
+
+        var runContext = runContextFactory.of(Map.of());
+
+        var task = JobInfo.builder()
+            .jobName("My Job")
+            .buildNumber(1)
+            .username(Property.ofValue("admin"))
+            .apiToken(Property.ofValue("token"))
+            .serverUrl(Property.ofValue(wm.getHttpBaseUrl()))
+            .build();
+
+        var output = task.run(runContext);
+
+        assertThat(output.getInfo().get("result"), is("SUCCESS"));
+        verify(getRequestedFor(urlEqualTo("/job/My%20Job/1/api/json")));
+    }
+
+    @Test
+    void fetchJobInfoInFolder(WireMockRuntimeInfo wm) throws Exception {
+        var buildInfoJson = """
+            {
+              "fullDisplayName": "team » My Job #1",
+              "result": "SUCCESS",
+              "duration": 1234
+            }
+            """;
+
+        stubFor(
+            get(urlEqualTo("/job/team/job/My%20Job/1/api/json"))
+                .willReturn(okJson(buildInfoJson))
+        );
+
+        var runContext = runContextFactory.of(Map.of());
+
+        var task = JobInfo.builder()
+            .jobName("team/My Job")
+            .buildNumber(1)
+            .username(Property.ofValue("admin"))
+            .apiToken(Property.ofValue("token"))
+            .serverUrl(Property.ofValue(wm.getHttpBaseUrl()))
+            .build();
+
+        var output = task.run(runContext);
+
+        assertThat(output.getInfo().get("result"), is("SUCCESS"));
+        verify(getRequestedFor(urlEqualTo("/job/team/job/My%20Job/1/api/json")));
+    }
 }

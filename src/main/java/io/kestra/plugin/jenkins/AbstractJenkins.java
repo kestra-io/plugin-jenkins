@@ -1,11 +1,14 @@
 package io.kestra.plugin.jenkins;
 
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.Objects;
+import java.util.stream.Collectors;
 
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import com.google.common.net.UrlEscapers;
 
 import io.kestra.core.exceptions.IllegalVariableEvaluationException;
 import io.kestra.core.http.HttpRequest;
@@ -15,6 +18,7 @@ import io.kestra.core.http.client.HttpClientException;
 import io.kestra.core.http.client.HttpClientResponseException;
 import io.kestra.core.http.client.configurations.BasicAuthConfiguration;
 import io.kestra.core.http.client.configurations.HttpConfiguration;
+import io.kestra.core.models.annotations.PluginProperty;
 import io.kestra.core.models.property.Property;
 import io.kestra.core.models.tasks.Task;
 import io.kestra.core.runners.RunContext;
@@ -23,7 +27,6 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotNull;
 import lombok.*;
 import lombok.experimental.SuperBuilder;
-import io.kestra.core.models.annotations.PluginProperty;
 
 @SuperBuilder
 @ToString
@@ -63,6 +66,12 @@ public abstract class AbstractJenkins extends Task {
     )
     @PluginProperty(group = "advanced")
     private HttpConfiguration options;
+
+    protected static String encodeJobPath(String jobName) {
+        return Arrays.stream(jobName.split("/"))
+            .map(segment -> "job/" + UrlEscapers.urlPathSegmentEscaper().escape(segment))
+            .collect(Collectors.joining("/"));
+    }
 
     protected <RES> HttpResponse<RES> request(RunContext runContext, HttpRequest.HttpRequestBuilder requestBuilder, Class<RES> responseType)
         throws HttpClientException, IllegalVariableEvaluationException {
