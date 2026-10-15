@@ -39,7 +39,7 @@ import lombok.experimental.SuperBuilder;
                     apiToken: "{{ secret('JENKINS_API_TOKEN') }}"
                     jobName: test
                     buildNumber: 1
-                    serverUri: http://localhost:8080
+                    serverUrl: http://localhost:8080
                 """
         )
     }
