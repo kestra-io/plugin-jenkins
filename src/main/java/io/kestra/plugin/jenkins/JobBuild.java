@@ -42,7 +42,7 @@ import lombok.experimental.SuperBuilder;
                   - id: build
                     type: io.kestra.plugin.jenkins.JobBuild
                     jobName: deploy-app
-                    serverUri: http://localhost:8080
+                    serverUrl: http://localhost:8080
                     username: admin
                     apiToken: "{{ secret('JENKINS_API_TOKEN') }}"
                     parameters:
