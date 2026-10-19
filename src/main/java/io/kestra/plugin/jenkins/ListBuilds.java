@@ -123,15 +123,16 @@ public class ListBuilds extends AbstractJenkins implements RunnableTask<ListBuil
             rawBuilds = (List<Map<String, Object>>) list;
         }
 
-        Stream<BuildSummary> stream = rawBuilds.stream().map(b -> BuildSummary.builder()
-            .number(b.get("number") instanceof Number n ? n.intValue() : null)
-            .url(b.get("url") instanceof String u ? u : null)
-            .result(b.get("result") instanceof String r ? r : null)
-            .building(b.get("building") instanceof Boolean bld ? bld : null)
-            .duration(b.get("duration") instanceof Number n ? n.longValue() : null)
-            .timestamp(b.get("timestamp") instanceof Number n ? Instant.ofEpochMilli(n.longValue()) : null)
-            .fullDisplayName(b.get("fullDisplayName") instanceof String d ? d : null)
-            .build()
+        Stream<BuildSummary> stream = rawBuilds.stream().map(
+            b -> BuildSummary.builder()
+                .number(b.get("number") instanceof Number n ? n.intValue() : null)
+                .url(b.get("url") instanceof String u ? u : null)
+                .result(b.get("result") instanceof String r ? r : null)
+                .building(b.get("building") instanceof Boolean bld ? bld : null)
+                .duration(b.get("duration") instanceof Number n ? n.longValue() : null)
+                .timestamp(b.get("timestamp") instanceof Number n ? Instant.ofEpochMilli(n.longValue()) : null)
+                .fullDisplayName(b.get("fullDisplayName") instanceof String d ? d : null)
+                .build()
         );
 
         if (renderedResult != null) {

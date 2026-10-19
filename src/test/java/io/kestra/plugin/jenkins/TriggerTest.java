@@ -166,4 +166,3 @@ class TriggerTest {
         assertThat(eval.get().getTrigger().getVariables().get("result"), is("FAILURE"));
     }
 }
-

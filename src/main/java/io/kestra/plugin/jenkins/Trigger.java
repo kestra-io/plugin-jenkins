@@ -211,10 +211,12 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
                     .max()
                     .orElse(0);
 
-                kvStore.put(stateKey, new KVValueAndMetadata(
-                    new KVMetadata("Jenkins trigger watermark", (Duration) null),
-                    String.valueOf(maxBuildNumber).getBytes(StandardCharsets.UTF_8)
-                ));
+                kvStore.put(
+                    stateKey, new KVValueAndMetadata(
+                        new KVMetadata("Jenkins trigger watermark", (Duration) null),
+                        String.valueOf(maxBuildNumber).getBytes(StandardCharsets.UTF_8)
+                    )
+                );
 
                 logger.info("Initialized Jenkins trigger watermark for job '{}' to build #{}", renderedJobName, maxBuildNumber);
                 return Optional.empty();
@@ -224,15 +226,17 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
         final int currentWatermark = watermark;
 
         List<ListBuilds.BuildSummary> candidateBuilds = rawBuilds.stream()
-            .map(b -> ListBuilds.BuildSummary.builder()
-                .number(b.get("number") instanceof Number n ? n.intValue() : null)
-                .url(b.get("url") instanceof String u ? u : null)
-                .result(b.get("result") instanceof String r ? r : null)
-                .building(b.get("building") instanceof Boolean bld ? bld : null)
-                .duration(b.get("duration") instanceof Number n ? n.longValue() : null)
-                .timestamp(b.get("timestamp") instanceof Number n ? Instant.ofEpochMilli(n.longValue()) : null)
-                .fullDisplayName(b.get("fullDisplayName") instanceof String d ? d : null)
-                .build())
+            .map(
+                b -> ListBuilds.BuildSummary.builder()
+                    .number(b.get("number") instanceof Number n ? n.intValue() : null)
+                    .url(b.get("url") instanceof String u ? u : null)
+                    .result(b.get("result") instanceof String r ? r : null)
+                    .building(b.get("building") instanceof Boolean bld ? bld : null)
+                    .duration(b.get("duration") instanceof Number n ? n.longValue() : null)
+                    .timestamp(b.get("timestamp") instanceof Number n ? Instant.ofEpochMilli(n.longValue()) : null)
+                    .fullDisplayName(b.get("fullDisplayName") instanceof String d ? d : null)
+                    .build()
+            )
             .filter(b -> b.getNumber() != null && b.getNumber() > currentWatermark)
             .filter(b -> Boolean.FALSE.equals(b.getBuilding()))
             .filter(b -> renderedResult == null || renderedResult.equalsIgnoreCase(b.getResult()))
@@ -245,10 +249,12 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
 
         ListBuilds.BuildSummary target = candidateBuilds.get(0);
 
-        kvStore.put(stateKey, new KVValueAndMetadata(
-            new KVMetadata("Jenkins trigger watermark", (Duration) null),
-            String.valueOf(target.getNumber()).getBytes(StandardCharsets.UTF_8)
-        ));
+        kvStore.put(
+            stateKey, new KVValueAndMetadata(
+                new KVMetadata("Jenkins trigger watermark", (Duration) null),
+                String.valueOf(target.getNumber()).getBytes(StandardCharsets.UTF_8)
+            )
+        );
 
         logger.info("Firing Jenkins trigger for job '{}' on build #{}", renderedJobName, target.getNumber());
 
