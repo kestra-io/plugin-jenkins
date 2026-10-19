@@ -16,7 +16,7 @@ import jakarta.inject.Inject;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.*;
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.*;
 
 @KestraTest
 @WireMockTest(httpPort = 8082)
@@ -29,9 +29,13 @@ class JobInfoTest {
     void fetchJobInfo(WireMockRuntimeInfo wm) throws Exception {
         String buildInfoJson = """
             {
+              "number": 1,
+              "url": "http://localhost:8082/job/test-job/1/",
               "fullDisplayName": "demo-job #1",
               "result": "SUCCESS",
-              "duration": 1234
+              "building": false,
+              "duration": 1234,
+              "timestamp": 1690000000000
             }
             """;
 
@@ -54,6 +58,49 @@ class JobInfoTest {
 
         assertThat(output.getInfo().get("result"), is("SUCCESS"));
         assertThat(output.getInfo().get("duration"), is(1234));
+        assertThat(output.getNumber(), is(1));
+        assertThat(output.getUrl(), is("http://localhost:8082/job/test-job/1/"));
+        assertThat(output.getResult(), is("SUCCESS"));
+        assertThat(output.getBuilding(), is(false));
+        assertThat(output.getDuration(), is(1234L));
+        assertThat(output.getTimestamp(), notNullValue());
+    }
+
+    @Test
+    void fetchJobInfoWithLastBuildAlias(WireMockRuntimeInfo wm) throws Exception {
+        String buildInfoJson = """
+            {
+              "number": 42,
+              "url": "http://localhost:8082/job/test-job/42/",
+              "fullDisplayName": "demo-job #42",
+              "result": "SUCCESS",
+              "building": false,
+              "duration": 5678,
+              "timestamp": 1690000000000
+            }
+            """;
+
+        stubFor(
+            get(urlEqualTo("/job/test-job/lastBuild/api/json"))
+                .willReturn(okJson(buildInfoJson))
+        );
+
+        RunContext runContext = runContextFactory.of(Map.of());
+
+        JobInfo task = JobInfo.builder()
+            .jobName("test-job")
+            .buildNumber("lastBuild")
+            .username(Property.ofValue("admin"))
+            .apiToken(Property.ofValue("token"))
+            .serverUrl(Property.ofValue(wm.getHttpBaseUrl()))
+            .build();
+
+        JobInfo.Output output = task.run(runContext);
+
+        assertThat(output.getNumber(), is(42));
+        assertThat(output.getResult(), is("SUCCESS"));
+        assertThat(output.getUrl(), is("http://localhost:8082/job/test-job/42/"));
+        verify(getRequestedFor(urlEqualTo("/job/test-job/lastBuild/api/json")));
     }
 
     @Test

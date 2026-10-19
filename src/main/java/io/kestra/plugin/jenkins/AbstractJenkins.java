@@ -67,7 +67,7 @@ public abstract class AbstractJenkins extends Task {
     @PluginProperty(group = "advanced")
     private HttpConfiguration options;
 
-    protected static String encodeJobPath(String jobName) {
+    public static String encodeJobPath(String jobName) {
         return Arrays.stream(jobName.split("/"))
             .map(segment -> "job/" + UrlEscapers.urlPathSegmentEscaper().escape(segment))
             .collect(Collectors.joining("/"));
