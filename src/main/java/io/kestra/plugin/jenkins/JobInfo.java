@@ -24,7 +24,9 @@ import lombok.experimental.SuperBuilder;
 @EqualsAndHashCode
 @Schema(
     title = "Fetch Jenkins build details",
-    description = "Retrieves a build JSON payload from Jenkins `/api/json`, URL-encoding foldered job paths and using Basic Auth when credentials are set."
+    description = """
+        Retrieves a build JSON payload from Jenkins `/api/json`, URL-encoding foldered job paths and using Basic Auth when credentials are set.
+        """
 )
 @Plugin(
     examples = {
@@ -67,7 +69,9 @@ public class JobInfo extends AbstractJenkins implements RunnableTask<JobInfo.Out
 
     @Schema(
         title = "Jenkins job path",
-        description = "Job name or foldered path using `/`; each segment is URL-encoded."
+        description = """
+            Job name or foldered path using `/`; each segment is URL-encoded.
+            """
     )
     @NotNull
     @PluginProperty(group = "main")
@@ -75,7 +79,9 @@ public class JobInfo extends AbstractJenkins implements RunnableTask<JobInfo.Out
 
     @Schema(
         title = "Build number or alias",
-        description = "Jenkins build number (e.g. `1`) or alias such as `lastBuild`, `lastSuccessfulBuild`, `lastFailedBuild`."
+        description = """
+            Jenkins build number (e.g. `1`) or alias such as `lastBuild`, `lastSuccessfulBuild`, `lastFailedBuild`.
+            """
     )
     @NotNull
     @PluginProperty(group = "main")
@@ -190,11 +196,5 @@ public class JobInfo extends AbstractJenkins implements RunnableTask<JobInfo.Out
 
         @Schema(title = "Build start timestamp")
         private final Instant timestamp;
-    }
-
-    @Data
-    @NoArgsConstructor
-    public static class GetResult {
-        Map<String, Object> response;
     }
 }

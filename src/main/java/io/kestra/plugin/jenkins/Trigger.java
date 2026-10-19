@@ -41,7 +41,9 @@ import lombok.experimental.SuperBuilder;
 @EqualsAndHashCode(callSuper = true)
 @Schema(
     title = "Wait for a Jenkins build to complete",
-    description = "Periodically polls Jenkins for completed builds on a specific job, advancing a watermark in the namespace KV store to guarantee exactly-once firing."
+    description = """
+        Periodically polls Jenkins for completed builds on a specific job, advancing a watermark in the namespace KV store to guarantee exactly-once firing.
+        """
 )
 @Plugin(
     examples = {
@@ -78,28 +80,40 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
     @NotNull
     @Schema(
         title = "Jenkins base URL",
-        description = "Base HTTP(S) endpoint for the Jenkins instance (e.g., `http://jenkins.example.com:8080`)."
+        description = """
+            Base HTTP(S) endpoint for the Jenkins instance (e.g., `http://jenkins.example.com:8080`).
+            """
     )
     @PluginProperty(group = "main")
     private Property<String> serverUrl;
 
     @Schema(
         title = "Jenkins username",
-        description = "Optional username used for Basic Auth when Jenkins is secured."
+        description = """
+            Optional username used for Basic Auth when Jenkins is secured.
+            """
     )
+    @ToString.Exclude
+    @EqualsAndHashCode.Exclude
     @PluginProperty(group = "connection", secret = true)
     private Property<String> username;
 
     @Schema(
         title = "API token",
-        description = "Jenkins API token or password paired with the username for Basic Auth."
+        description = """
+            Jenkins API token or password paired with the username for Basic Auth.
+            """
     )
+    @ToString.Exclude
+    @EqualsAndHashCode.Exclude
     @PluginProperty(group = "connection", secret = true)
     private Property<String> apiToken;
 
     @Schema(
         title = "HTTP client options",
-        description = "Optional overrides for HTTP timeouts, proxies, or headers."
+        description = """
+            Optional overrides for HTTP timeouts, proxies, or headers.
+            """
     )
     @PluginProperty(group = "advanced")
     private HttpConfiguration options;
@@ -107,14 +121,18 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
     @NotNull
     @Schema(
         title = "Jenkins job path",
-        description = "Job name or foldered path using `/`; each segment is URL-encoded."
+        description = """
+            Job name or foldered path using `/`; each segment is URL-encoded.
+            """
     )
     @PluginProperty(group = "main")
     private Property<String> jobName;
 
     @Schema(
         title = "Build result filter",
-        description = "Optional filter by build result (e.g., `SUCCESS`, `FAILURE`, `UNSTABLE`). Case-insensitive."
+        description = """
+            Optional filter by build result (e.g., `SUCCESS`, `FAILURE`, `UNSTABLE`). Case-insensitive.
+            """
     )
     @PluginProperty(group = "advanced")
     private Property<String> result;
@@ -122,14 +140,18 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
     @Builder.Default
     @Schema(
         title = "Polling interval",
-        description = "Interval between trigger evaluations. Defaults to 1 minute."
+        description = """
+            Interval between trigger evaluations. Defaults to 1 minute.
+            """
     )
     @PluginProperty(group = "execution")
     private final Duration interval = Duration.ofMinutes(1);
 
     @Schema(
         title = "Initial build number",
-        description = "Optional build number to start monitoring from. When omitted on first poll, initialized to the current highest build number so existing past builds are not re-fired."
+        description = """
+            Optional build number to start monitoring from. When omitted on first poll, initialized to the current highest build number so existing past builds are not re-fired.
+            """
     )
     @PluginProperty(group = "advanced")
     private Property<Integer> initialBuildNumber;

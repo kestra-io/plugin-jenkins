@@ -27,7 +27,9 @@ import lombok.extern.jackson.Jacksonized;
 @EqualsAndHashCode
 @Schema(
     title = "List recent builds of a Jenkins job",
-    description = "Retrieves builds from the Jenkins job API tree, supporting filters by build result and start time."
+    description = """
+        Retrieves builds from the Jenkins job API tree, supporting filters by build result and start time.
+        """
 )
 @Plugin(
     examples = {
@@ -58,7 +60,9 @@ public class ListBuilds extends AbstractJenkins implements RunnableTask<ListBuil
 
     @Schema(
         title = "Jenkins job path",
-        description = "Job name or foldered path using `/`; each segment is URL-encoded."
+        description = """
+            Job name or foldered path using `/`; each segment is URL-encoded.
+            """
     )
     @NotNull
     @PluginProperty(group = "main")
@@ -66,21 +70,27 @@ public class ListBuilds extends AbstractJenkins implements RunnableTask<ListBuil
 
     @Schema(
         title = "Build result filter",
-        description = "Optional filter by build result (e.g., `SUCCESS`, `FAILURE`, `UNSTABLE`, `ABORTED`). Case-insensitive."
+        description = """
+            Optional filter by build result (e.g., `SUCCESS`, `FAILURE`, `UNSTABLE`, `ABORTED`). Case-insensitive.
+            """
     )
     @PluginProperty(group = "advanced")
     private Property<String> result;
 
     @Schema(
         title = "Since timestamp",
-        description = "Optional filter to include only builds started at or after this instant."
+        description = """
+            Optional filter to include only builds started at or after this instant.
+            """
     )
     @PluginProperty(group = "advanced")
     private Property<Instant> since;
 
     @Schema(
         title = "Maximum builds",
-        description = "Optional maximum number of builds to return."
+        description = """
+            Optional maximum number of builds to return.
+            """
     )
     @PluginProperty(group = "advanced")
     private Property<Integer> max;

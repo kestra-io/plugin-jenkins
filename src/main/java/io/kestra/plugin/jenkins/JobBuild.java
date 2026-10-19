@@ -32,7 +32,9 @@ import lombok.experimental.SuperBuilder;
 @NoArgsConstructor
 @Schema(
     title = "Trigger a Jenkins job build",
-    description = "Calls Jenkins buildWithParameters to enqueue a build, URL-encoding foldered job names and form parameters; optionally waits for completion and verifies the build result."
+    description = """
+        Calls Jenkins buildWithParameters to enqueue a build, URL-encoding foldered job names and form parameters; optionally waits for completion and verifies the build result.
+        """
 )
 @Plugin(
     examples = {
@@ -84,7 +86,9 @@ public class JobBuild extends AbstractJenkins implements RunnableTask<JobBuild.O
 
     @Schema(
         title = "Jenkins job path",
-        description = "Job name or foldered path using `/` (e.g., `team/project/job`); each segment is URL-encoded."
+        description = """
+            Job name or foldered path using `/` (e.g., `team/project/job`); each segment is URL-encoded.
+            """
     )
     @NotNull
     @PluginProperty(group = "main")
@@ -92,14 +96,18 @@ public class JobBuild extends AbstractJenkins implements RunnableTask<JobBuild.O
 
     @Schema(
         title = "Build parameters",
-        description = "Optional map sent as form data to Jenkins; values are rendered then URL-encoded."
+        description = """
+            Optional map sent as form data to Jenkins; values are rendered then URL-encoded.
+            """
     )
     @PluginProperty(group = "main")
     private Property<Map<String, Object>> parameters;
 
     @Schema(
         title = "Wait for completion",
-        description = "Whether to poll until the queued build finishes running."
+        description = """
+            Whether to poll until the queued build finishes running.
+            """
     )
     @Builder.Default
     @PluginProperty(group = "advanced")
@@ -107,7 +115,9 @@ public class JobBuild extends AbstractJenkins implements RunnableTask<JobBuild.O
 
     @Schema(
         title = "Polling interval",
-        description = "Frequency at which to poll the queue item and build endpoint when `wait` is true."
+        description = """
+            Frequency at which to poll the queue item and build endpoint when `wait` is true.
+            """
     )
     @Builder.Default
     @PluginProperty(group = "advanced")
@@ -115,7 +125,9 @@ public class JobBuild extends AbstractJenkins implements RunnableTask<JobBuild.O
 
     @Schema(
         title = "Execution timeout",
-        description = "Maximum duration to wait for the build to finish before timing out."
+        description = """
+            Maximum duration to wait for the build to finish before timing out.
+            """
     )
     @Builder.Default
     @PluginProperty(group = "advanced")
@@ -123,7 +135,9 @@ public class JobBuild extends AbstractJenkins implements RunnableTask<JobBuild.O
 
     @Schema(
         title = "Cancel build on timeout",
-        description = "If true, attempts to cancel the queued item or stop the running build if the timeout is reached."
+        description = """
+            If true, attempts to cancel the queued item or stop the running build if the timeout is reached.
+            """
     )
     @Builder.Default
     @PluginProperty(group = "advanced")
@@ -131,7 +145,9 @@ public class JobBuild extends AbstractJenkins implements RunnableTask<JobBuild.O
 
     @Schema(
         title = "Allowed success statuses",
-        description = "List of acceptable build results when `wait` is true. Defaults to `['SUCCESS']`."
+        description = """
+            List of acceptable build results when `wait` is true. Defaults to `['SUCCESS']`.
+            """
     )
     @Builder.Default
     @PluginProperty(group = "advanced")
@@ -350,7 +366,12 @@ public class JobBuild extends AbstractJenkins implements RunnableTask<JobBuild.O
         @Schema(title = "HTTP status code returned by Jenkins")
         private final Integer status;
 
-        @Schema(title = "Jenkins queue item ID", description = "Parsed from the Location header returned when queuing the build.")
+        @Schema(
+            title = "Jenkins queue item ID",
+            description = """
+                Parsed from the Location header returned when queuing the build.
+                """
+        )
         private final Long queueId;
 
         @Schema(title = "Build number assigned to the queued build")
@@ -359,10 +380,20 @@ public class JobBuild extends AbstractJenkins implements RunnableTask<JobBuild.O
         @Schema(title = "Direct URL to the build in Jenkins")
         private final String buildUrl;
 
-        @Schema(title = "Build result", description = "Final result status of the build (e.g., SUCCESS, FAILURE, UNSTABLE). Only populated when wait is true.")
+        @Schema(
+            title = "Build result",
+            description = """
+                Final result status of the build (e.g., SUCCESS, FAILURE, UNSTABLE). Only populated when wait is true.
+                """
+        )
         private final String result;
 
-        @Schema(title = "Full build details payload from Jenkins API", description = "Only populated when wait is true.")
+        @Schema(
+            title = "Full build details payload from Jenkins API",
+            description = """
+                Only populated when wait is true.
+                """
+        )
         private final Map<String, Object> info;
     }
 }

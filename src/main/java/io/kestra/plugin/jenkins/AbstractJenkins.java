@@ -41,28 +41,40 @@ public abstract class AbstractJenkins extends Task {
     @NotNull
     @Schema(
         title = "Set Jenkins base URL",
-        description = "Base HTTP(S) endpoint for the Jenkins instance; trailing slash optional and defaults are rendered from Flow variables (e.g., http://jenkins.example.com:8080)"
+        description = """
+            Base HTTP(S) endpoint for the Jenkins instance; trailing slash optional and defaults are rendered from Flow variables (e.g., http://jenkins.example.com:8080).
+            """
     )
     @PluginProperty(group = "main")
     protected Property<String> serverUrl;
 
     @Schema(
         title = "Jenkins username",
-        description = "Optional username used for Basic Auth when the server is secured"
+        description = """
+            Optional username used for Basic Auth when the server is secured.
+            """
     )
+    @ToString.Exclude
+    @EqualsAndHashCode.Exclude
     @PluginProperty(secret = true, group = "connection")
     private Property<String> username;
 
     @Schema(
         title = "API token",
-        description = "Jenkins API token or password paired with the username for Basic Auth"
+        description = """
+            Jenkins API token or password paired with the username for Basic Auth.
+            """
     )
+    @ToString.Exclude
+    @EqualsAndHashCode.Exclude
     @PluginProperty(group = "connection", secret = true)
     private Property<String> apiToken;
 
     @Schema(
         title = "HTTP client options",
-        description = "Optional overrides for HTTP timeouts, proxies, or headers; merged with Basic Auth credentials"
+        description = """
+            Optional overrides for HTTP timeouts, proxies, or headers; merged with Basic Auth credentials.
+            """
     )
     @PluginProperty(group = "advanced")
     private HttpConfiguration options;
