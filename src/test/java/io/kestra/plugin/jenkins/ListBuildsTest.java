@@ -1,5 +1,7 @@
 package io.kestra.plugin.jenkins;
 
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
 import java.time.Instant;
 import java.util.Map;
 
@@ -10,6 +12,7 @@ import com.github.tomakehurst.wiremock.junit5.WireMockTest;
 
 import io.kestra.core.junit.annotations.KestraTest;
 import io.kestra.core.models.property.Property;
+import io.kestra.core.models.tasks.common.FetchType;
 import io.kestra.core.runners.RunContext;
 import io.kestra.core.runners.RunContextFactory;
 
@@ -64,7 +67,7 @@ class ListBuildsTest {
     @Test
     void listAllBuilds(WireMockRuntimeInfo wm) throws Exception {
         stubFor(
-            get(urlEqualTo("/job/test-job/api/json?tree=builds[number,url,result,building,duration,timestamp,fullDisplayName]"))
+            get(urlMatching("/job/test-job/api/json\\?tree=builds.*"))
                 .willReturn(okJson(BUILDS_JSON))
         );
 
@@ -85,7 +88,7 @@ class ListBuildsTest {
     @Test
     void listFailedBuilds(WireMockRuntimeInfo wm) throws Exception {
         stubFor(
-            get(urlEqualTo("/job/test-job/api/json?tree=builds[number,url,result,building,duration,timestamp,fullDisplayName]"))
+            get(urlMatching("/job/test-job/api/json\\?tree=builds.*"))
                 .willReturn(okJson(BUILDS_JSON))
         );
 
@@ -94,7 +97,7 @@ class ListBuildsTest {
         ListBuilds task = ListBuilds.builder()
             .jobName(Property.ofValue("test-job"))
             .serverUrl(Property.ofValue(wm.getHttpBaseUrl()))
-            .result(Property.ofValue("FAILURE"))
+            .result(Property.ofValue(BuildResult.FAILURE))
             .build();
 
         ListBuilds.Output output = task.run(runContext);
@@ -108,7 +111,7 @@ class ListBuildsTest {
     @Test
     void listBuildsSince(WireMockRuntimeInfo wm) throws Exception {
         stubFor(
-            get(urlEqualTo("/job/test-job/api/json?tree=builds[number,url,result,building,duration,timestamp,fullDisplayName]"))
+            get(urlMatching("/job/test-job/api/json\\?tree=builds.*"))
                 .willReturn(okJson(BUILDS_JSON))
         );
 
@@ -129,7 +132,7 @@ class ListBuildsTest {
     @Test
     void listBuildsWithMax(WireMockRuntimeInfo wm) throws Exception {
         stubFor(
-            get(urlEqualTo("/job/test-job/api/json?tree=builds[number,url,result,building,duration,timestamp,fullDisplayName]"))
+            get(urlMatching("/job/test-job/api/json\\?tree=builds.*"))
                 .willReturn(okJson(BUILDS_JSON))
         );
 
@@ -145,5 +148,56 @@ class ListBuildsTest {
 
         assertThat(output.getSize(), is(1));
         assertThat(output.getBuilds().get(0).getNumber(), is(10));
+    }
+
+    @Test
+    void listBuildsFetchOne(WireMockRuntimeInfo wm) throws Exception {
+        stubFor(
+            get(urlMatching("/job/test-job/api/json\\?tree=builds.*"))
+                .willReturn(okJson(BUILDS_JSON))
+        );
+
+        RunContext runContext = runContextFactory.of(Map.of());
+
+        ListBuilds task = ListBuilds.builder()
+            .jobName(Property.ofValue("test-job"))
+            .serverUrl(Property.ofValue(wm.getHttpBaseUrl()))
+            .fetchType(Property.ofValue(FetchType.FETCH_ONE))
+            .build();
+
+        ListBuilds.Output output = task.run(runContext);
+
+        assertThat(output.getSize(), is(3));
+        assertThat(output.getBuild(), notNullValue());
+        assertThat(output.getBuild().getNumber(), is(10));
+    }
+
+    @Test
+    void listBuildsStore(WireMockRuntimeInfo wm) throws Exception {
+        stubFor(
+            get(urlMatching("/job/test-job/api/json\\?tree=builds.*"))
+                .willReturn(okJson(BUILDS_JSON))
+        );
+
+        RunContext runContext = runContextFactory.of(Map.of());
+
+        ListBuilds task = ListBuilds.builder()
+            .jobName(Property.ofValue("test-job"))
+            .serverUrl(Property.ofValue(wm.getHttpBaseUrl()))
+            .fetchType(Property.ofValue(FetchType.STORE))
+            .build();
+
+        ListBuilds.Output output = task.run(runContext);
+
+        assertThat(output.getSize(), is(3));
+        assertThat(output.getUri(), notNullValue());
+
+        try (
+            var is = runContext.storage().getFile(output.getUri());
+            var reader = new BufferedReader(new InputStreamReader(is))
+        ) {
+            long lines = reader.lines().count();
+            assertThat(lines, is(3L));
+        }
     }
 }

@@ -2,19 +2,14 @@ package io.kestra.plugin.jenkins;
 
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
-import java.util.stream.Collectors;
 
-import org.slf4j.Logger;
-
-import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 
 import io.kestra.core.http.HttpRequest;
-import io.kestra.core.http.HttpResponse;
 import io.kestra.core.http.client.HttpClient;
 import io.kestra.core.http.client.configurations.BasicAuthConfiguration;
 import io.kestra.core.http.client.configurations.HttpConfiguration;
@@ -26,6 +21,7 @@ import io.kestra.core.models.executions.Execution;
 import io.kestra.core.models.property.Property;
 import io.kestra.core.models.triggers.*;
 import io.kestra.core.runners.RunContext;
+import io.kestra.core.serializers.JacksonMapper;
 import io.kestra.core.storages.kv.KVMetadata;
 import io.kestra.core.storages.kv.KVValueAndMetadata;
 
@@ -73,9 +69,7 @@ import lombok.experimental.SuperBuilder;
 )
 public class Trigger extends AbstractTrigger implements PollingTriggerInterface, TriggerOutput<Trigger.Output> {
 
-    private static final ObjectMapper MAPPER = new ObjectMapper()
-        .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
-        .registerModule(new JavaTimeModule());
+    private static final ObjectMapper MAPPER = JacksonMapper.ofJson();
 
     @NotNull
     @Schema(
@@ -131,11 +125,11 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
     @Schema(
         title = "Build result filter",
         description = """
-            Optional filter by build result (e.g., `SUCCESS`, `FAILURE`, `UNSTABLE`). Case-insensitive.
+            Optional filter by build result: `SUCCESS`, `UNSTABLE`, `FAILURE`, `NOT_BUILT`, or `ABORTED`.
             """
     )
-    @PluginProperty(group = "advanced")
-    private Property<String> result;
+    @PluginProperty(group = "processing")
+    private Property<BuildResult> result;
 
     @Builder.Default
     @Schema(
@@ -159,27 +153,29 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
     @Override
     @SuppressWarnings("unchecked")
     public Optional<Execution> evaluate(ConditionContext conditionContext, TriggerContext context) throws Exception {
-        RunContext runContext = conditionContext.getRunContext();
-        Logger logger = runContext.logger();
+        var runContext = conditionContext.getRunContext();
+        var logger = runContext.logger();
 
-        String base = runContext.render(serverUrl).as(String.class).orElseThrow();
-        if (!base.endsWith("/")) {
-            base += "/";
-        }
+        var rServerUrl = runContext.render(serverUrl).as(String.class).orElseThrow();
+        var rBase = rServerUrl.endsWith("/") ? rServerUrl : rServerUrl + "/";
 
-        String renderedJobName = runContext.render(jobName).as(String.class).orElseThrow();
-        String renderedResult = result != null ? runContext.render(result).as(String.class).orElse(null) : null;
-        Integer renderedInitialBuild = initialBuildNumber != null ? runContext.render(initialBuildNumber).as(Integer.class).orElse(null) : null;
+        var rJobName = runContext.render(jobName).as(String.class).orElseThrow();
+        var rResult = result != null ? runContext.render(result).as(BuildResult.class).orElse(null) : null;
+        var rInitialBuild = initialBuildNumber != null ? runContext.render(initialBuildNumber).as(Integer.class).orElse(null) : null;
 
-        var jobPath = AbstractJenkins.encodeJobPath(renderedJobName);
+        var jobPath = AbstractJenkins.encodeJobPath(rJobName);
         var kvStore = runContext.namespaceKv(context.getNamespace());
-        String stateKey = "jenkins_watermark_" + context.getFlowId() + "_" + this.getId() + "_" + jobPath.replace('/', '_');
+
+        var jobHash = sha256Hex(rJobName);
+        var flowId = context.getFlowId() != null ? context.getFlowId() : "default";
+        var triggerId = this.getId() != null ? this.getId() : "jenkins";
+        var stateKey = "jenkins_watermark_" + flowId.length() + "_" + flowId + "_" + triggerId.length() + "_" + triggerId + "_" + jobHash;
 
         Integer watermark = null;
         try {
             var kvVal = kvStore.getValue(stateKey);
             if (kvVal.isPresent() && kvVal.get().value() != null) {
-                Object val = kvVal.get().value();
+                var val = kvVal.get().value();
                 if (val instanceof Number n) {
                     watermark = n.intValue();
                 } else if (val instanceof byte[] bytes && bytes.length > 0) {
@@ -189,11 +185,12 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
                 }
             }
         } catch (Exception e) {
-            logger.debug("No previous watermark found in KV store: {}", e.getMessage());
+            logger.warn("Failed to read Jenkins watermark from KV store for key '{}': {}", stateKey, e.getMessage());
+            return Optional.empty();
         }
 
-        URI uri = URI.create(base + jobPath + "/api/json?tree=builds[number,url,result,building,duration,timestamp,fullDisplayName]");
-        Map<String, Object> jobData = fetchJobData(runContext, uri);
+        var uri = URI.create(rBase + jobPath + "/api/json?tree=builds[number,url,result,building,duration,timestamp,fullDisplayName]");
+        var jobData = fetchJobData(runContext, uri);
 
         List<Map<String, Object>> rawBuilds = Collections.emptyList();
         if (jobData != null && jobData.get("builds") instanceof List<?> list) {
@@ -201,8 +198,8 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
         }
 
         if (watermark == null) {
-            if (renderedInitialBuild != null) {
-                watermark = renderedInitialBuild - 1;
+            if (rInitialBuild != null) {
+                watermark = rInitialBuild - 1;
             } else {
                 int maxBuildNumber = rawBuilds.stream()
                     .map(b -> b.get("number"))
@@ -214,69 +211,107 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
                 kvStore.put(
                     stateKey, new KVValueAndMetadata(
                         new KVMetadata("Jenkins trigger watermark", (Duration) null),
-                        String.valueOf(maxBuildNumber).getBytes(StandardCharsets.UTF_8)
+                        maxBuildNumber
                     )
                 );
 
-                logger.info("Initialized Jenkins trigger watermark for job '{}' to build #{}", renderedJobName, maxBuildNumber);
+                logger.info("Initialized Jenkins trigger watermark for job '{}' to build #{}", rJobName, maxBuildNumber);
                 return Optional.empty();
             }
         }
 
         final int currentWatermark = watermark;
 
-        List<ListBuilds.BuildSummary> candidateBuilds = rawBuilds.stream()
-            .map(
-                b -> ListBuilds.BuildSummary.builder()
-                    .number(b.get("number") instanceof Number n ? n.intValue() : null)
-                    .url(b.get("url") instanceof String u ? u : null)
-                    .result(b.get("result") instanceof String r ? r : null)
-                    .building(b.get("building") instanceof Boolean bld ? bld : null)
-                    .duration(b.get("duration") instanceof Number n ? n.longValue() : null)
-                    .timestamp(b.get("timestamp") instanceof Number n ? Instant.ofEpochMilli(n.longValue()) : null)
-                    .fullDisplayName(b.get("fullDisplayName") instanceof String d ? d : null)
-                    .build()
-            )
-            .filter(b -> b.getNumber() != null && b.getNumber() > currentWatermark)
-            .filter(b -> Boolean.FALSE.equals(b.getBuilding()))
-            .filter(b -> renderedResult == null || renderedResult.equalsIgnoreCase(b.getResult()))
-            .sorted(Comparator.comparingInt(ListBuilds.BuildSummary::getNumber))
-            .collect(Collectors.toList());
+        var summaries = rawBuilds.stream()
+            .map(ListBuilds.BuildSummary::from)
+            .filter(Objects::nonNull)
+            .toList();
 
-        if (candidateBuilds.isEmpty()) {
+        Integer lowestBuildingNumber = summaries.stream()
+            .filter(b -> b.getNumber() != null && b.getNumber() > currentWatermark)
+            .filter(b -> Boolean.TRUE.equals(b.getBuilding()))
+            .map(ListBuilds.BuildSummary::getNumber)
+            .min(Integer::compareTo)
+            .orElse(null);
+
+        int safeCeiling = currentWatermark;
+        if (lowestBuildingNumber != null) {
+            safeCeiling = Math.max(currentWatermark, lowestBuildingNumber - 1);
+        } else {
+            Integer maxCompleted = summaries.stream()
+                .filter(b -> b.getNumber() != null && b.getNumber() > currentWatermark)
+                .filter(b -> Boolean.FALSE.equals(b.getBuilding()))
+                .map(ListBuilds.BuildSummary::getNumber)
+                .max(Integer::compareTo)
+                .orElse(null);
+            if (maxCompleted != null) {
+                safeCeiling = maxCompleted;
+            }
+        }
+
+        final int finalSafeCeiling = safeCeiling;
+        var eligibleBuilds = summaries.stream()
+            .filter(b -> b.getNumber() != null && b.getNumber() > currentWatermark && b.getNumber() <= finalSafeCeiling)
+            .filter(b -> Boolean.FALSE.equals(b.getBuilding()))
+            .sorted(Comparator.comparingInt(ListBuilds.BuildSummary::getNumber))
+            .toList();
+
+        var matchingBuilds = eligibleBuilds.stream()
+            .filter(b -> rResult == null || rResult.name().equalsIgnoreCase(b.getResult()))
+            .toList();
+
+        if (safeCeiling > currentWatermark) {
+            kvStore.put(
+                stateKey, new KVValueAndMetadata(
+                    new KVMetadata("Jenkins trigger watermark", (Duration) null),
+                    safeCeiling
+                )
+            );
+        }
+
+        if (matchingBuilds.isEmpty()) {
             return Optional.empty();
         }
 
-        ListBuilds.BuildSummary target = candidateBuilds.get(0);
+        var target = matchingBuilds.getFirst();
 
-        kvStore.put(
-            stateKey, new KVValueAndMetadata(
-                new KVMetadata("Jenkins trigger watermark", (Duration) null),
-                String.valueOf(target.getNumber()).getBytes(StandardCharsets.UTF_8)
-            )
-        );
+        logger.info("Firing Jenkins trigger for job '{}' on build #{}", rJobName, target.getNumber());
 
-        logger.info("Firing Jenkins trigger for job '{}' on build #{}", renderedJobName, target.getNumber());
-
-        Output output = Output.builder()
+        var output = Output.builder()
             .buildNumber(target.getNumber())
             .buildUrl(target.getUrl())
             .result(target.getResult())
             .duration(target.getDuration())
             .timestamp(target.getTimestamp())
             .fullDisplayName(target.getFullDisplayName())
+            .build(target)
+            .builds(matchingBuilds)
             .build();
 
         return Optional.of(TriggerService.generateExecution(this, conditionContext, context, output));
     }
 
+    private static String sha256Hex(String input) {
+        try {
+            var digest = MessageDigest.getInstance("SHA-256");
+            var hash = digest.digest(input.getBytes(StandardCharsets.UTF_8));
+            var hex = new StringBuilder(hash.length * 2);
+            for (byte b : hash) {
+                hex.append(String.format("%02x", b));
+            }
+            return hex.toString();
+        } catch (Exception e) {
+            throw new RuntimeException("SHA-256 not available", e);
+        }
+    }
+
     @SuppressWarnings("unchecked")
     private Map<String, Object> fetchJobData(RunContext runContext, URI uri) throws Exception {
-        HttpConfiguration httpConfig = configureAuthentication();
+        var httpConfig = configureAuthentication();
         var request = HttpRequest.builder().uri(uri).method("GET").build();
 
-        try (HttpClient client = new HttpClient(runContext, httpConfig)) {
-            HttpResponse<String> response = client.request(request, String.class);
+        try (var client = new HttpClient(runContext, httpConfig)) {
+            var response = client.request(request, String.class);
             if (response.getBody() != null && !response.getBody().isEmpty()) {
                 return MAPPER.readValue(response.getBody(), Map.class);
             }
@@ -285,7 +320,7 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
     }
 
     private HttpConfiguration configureAuthentication() {
-        HttpConfiguration.HttpConfigurationBuilder configBuilder = (options != null) ? options.toBuilder() : HttpConfiguration.builder();
+        var configBuilder = (options != null) ? options.toBuilder() : HttpConfiguration.builder();
 
         return configBuilder.auth(
             BasicAuthConfiguration.builder()
@@ -315,5 +350,11 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
 
         @Schema(title = "Full display name of the build")
         private final String fullDisplayName;
+
+        @Schema(title = "Primary build that triggered execution")
+        private final ListBuilds.BuildSummary build;
+
+        @Schema(title = "All completed builds available at evaluation time")
+        private final List<ListBuilds.BuildSummary> builds;
     }
 }

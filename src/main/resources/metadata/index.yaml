@@ -1,8 +1,8 @@
 group: io.kestra.plugin.jenkins
 name: "jenkins"
 title: "Jenkins"
-description: "Tasks that trigger Jenkins jobs and retrieve build or job metadata."
-body: "Provide the Jenkins `serverUrl` with a username and API token to start parameterized builds and query job or build details; the tasks handle crumb headers via the HTTP configuration and surface queue, status, and artifact information for orchestration."
+description: "Tasks and triggers to trigger Jenkins jobs, list historical runs, query build details, and react to completed builds."
+body: "Provide the Jenkins `serverUrl` with a username and API token to start parameterized builds, query job or build details, list runs with fetch/store options, or trigger flows on build completion; the tasks handle crumb headers and surface queue, status, and artifact information for orchestration."
 videos: []
 createdBy: "Kestra Core Team"
 managedBy: "Kestra Core Team"

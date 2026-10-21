@@ -2,6 +2,7 @@ package io.kestra.plugin.jenkins;
 
 import java.util.Optional;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import com.github.tomakehurst.wiremock.junit5.WireMockRuntimeInfo;
@@ -27,7 +28,7 @@ class TriggerTest {
     @Inject
     private RunContextFactory runContextFactory;
 
-    @org.junit.jupiter.api.BeforeEach
+    @BeforeEach
     void setUp() {
         reset();
     }
@@ -154,7 +155,7 @@ class TriggerTest {
             .type(Trigger.class.getName())
             .serverUrl(Property.ofValue(wm.getHttpBaseUrl()))
             .jobName(Property.ofValue("trigger-fail-job"))
-            .result(Property.ofValue("FAILURE"))
+            .result(Property.ofValue(BuildResult.FAILURE))
             .initialBuildNumber(Property.ofValue(5))
             .build();
 
@@ -164,5 +165,148 @@ class TriggerTest {
         assertThat(eval.isPresent(), is(true));
         assertThat(eval.get().getTrigger().getVariables().get("buildNumber"), is(5));
         assertThat(eval.get().getTrigger().getVariables().get("result"), is("FAILURE"));
+    }
+
+    @Test
+    void triggerFolderedJobWithSpaceInName(WireMockRuntimeInfo wm) throws Exception {
+        String initialBuildsJson = """
+            {
+              "builds": [
+                {
+                  "number": 1,
+                  "url": "http://localhost:8082/job/folder/job/my%20job/1/",
+                  "result": "SUCCESS",
+                  "building": false,
+                  "duration": 1000,
+                  "timestamp": 1690000100000,
+                  "fullDisplayName": "folder » my job #1"
+                }
+              ]
+            }
+            """;
+
+        stubFor(
+            get(urlEqualTo("/job/folder/job/my%20job/api/json?tree=builds[number,url,result,building,duration,timestamp,fullDisplayName]"))
+                .willReturn(okJson(initialBuildsJson))
+        );
+
+        Trigger trigger = Trigger.builder()
+            .id("jenkins-space-trigger-" + IdUtils.create())
+            .type(Trigger.class.getName())
+            .serverUrl(Property.ofValue(wm.getHttpBaseUrl()))
+            .jobName(Property.ofValue("folder/my job"))
+            .initialBuildNumber(Property.ofValue(1))
+            .build();
+
+        var context = TestsUtils.mockTrigger(runContextFactory, trigger);
+
+        // Watermark set to initialBuildNumber - 1 = 0. Build 1 fires!
+        Optional<Execution> eval = trigger.evaluate(context.getKey(), context.getValue());
+        assertThat(eval.isPresent(), is(true));
+        assertThat(eval.get().getTrigger().getVariables().get("buildNumber"), is(1));
+    }
+
+    @Test
+    void triggerOutOfOrderBuildCompletion(WireMockRuntimeInfo wm) throws Exception {
+        // Build 11 is in progress (building: true), while Build 12 completed (building: false).
+        // Trigger must NOT fire 12 or advance watermark past 11.
+        String runningBuildsJson = """
+            {
+              "builds": [
+                {
+                  "number": 12,
+                  "url": "http://localhost:8082/job/ooo-job/12/",
+                  "result": "SUCCESS",
+                  "building": false,
+                  "duration": 1000,
+                  "timestamp": 1690000200000,
+                  "fullDisplayName": "ooo-job #12"
+                },
+                {
+                  "number": 11,
+                  "url": "http://localhost:8082/job/ooo-job/11/",
+                  "result": null,
+                  "building": true,
+                  "duration": 0,
+                  "timestamp": 1690000100000,
+                  "fullDisplayName": "ooo-job #11"
+                },
+                {
+                  "number": 10,
+                  "url": "http://localhost:8082/job/ooo-job/10/",
+                  "result": "SUCCESS",
+                  "building": false,
+                  "duration": 1000,
+                  "timestamp": 1690000000000,
+                  "fullDisplayName": "ooo-job #10"
+                }
+              ]
+            }
+            """;
+
+        stubFor(
+            get(urlEqualTo("/job/ooo-job/api/json?tree=builds[number,url,result,building,duration,timestamp,fullDisplayName]"))
+                .willReturn(okJson(runningBuildsJson))
+        );
+
+        Trigger trigger = Trigger.builder()
+            .id("jenkins-ooo-trigger-" + IdUtils.create())
+            .type(Trigger.class.getName())
+            .serverUrl(Property.ofValue(wm.getHttpBaseUrl()))
+            .jobName(Property.ofValue("ooo-job"))
+            .initialBuildNumber(Property.ofValue(11))
+            .build();
+
+        var context = TestsUtils.mockTrigger(runContextFactory, trigger);
+
+        // Watermark initialized to 10. Build 11 is still building, so safe ceiling is 10.
+        // Build 12 is held back to prevent skipping 11.
+        Optional<Execution> eval1 = trigger.evaluate(context.getKey(), context.getValue());
+        assertThat(eval1.isPresent(), is(false));
+
+        // Now build 11 finishes!
+        String allCompletedJson = """
+            {
+              "builds": [
+                {
+                  "number": 12,
+                  "url": "http://localhost:8082/job/ooo-job/12/",
+                  "result": "SUCCESS",
+                  "building": false,
+                  "duration": 1000,
+                  "timestamp": 1690000200000,
+                  "fullDisplayName": "ooo-job #12"
+                },
+                {
+                  "number": 11,
+                  "url": "http://localhost:8082/job/ooo-job/11/",
+                  "result": "SUCCESS",
+                  "building": false,
+                  "duration": 5000,
+                  "timestamp": 1690000100000,
+                  "fullDisplayName": "ooo-job #11"
+                },
+                {
+                  "number": 10,
+                  "url": "http://localhost:8082/job/ooo-job/10/",
+                  "result": "SUCCESS",
+                  "building": false,
+                  "duration": 1000,
+                  "timestamp": 1690000000000,
+                  "fullDisplayName": "ooo-job #10"
+                }
+              ]
+            }
+            """;
+
+        stubFor(
+            get(urlEqualTo("/job/ooo-job/api/json?tree=builds[number,url,result,building,duration,timestamp,fullDisplayName]"))
+                .willReturn(okJson(allCompletedJson))
+        );
+
+        // Evaluation fires build 11 (the lowest completed eligible build)
+        Optional<Execution> eval2 = trigger.evaluate(context.getKey(), context.getValue());
+        assertThat(eval2.isPresent(), is(true));
+        assertThat(eval2.get().getTrigger().getVariables().get("buildNumber"), is(11));
     }
 }

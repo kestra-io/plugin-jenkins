@@ -3,6 +3,7 @@ package io.kestra.plugin.jenkins;
 import java.net.URI;
 import java.time.Instant;
 import java.util.Map;
+import java.util.Set;
 
 import io.kestra.core.http.HttpRequest;
 import io.kestra.core.models.annotations.Example;
@@ -67,6 +68,16 @@ import lombok.experimental.SuperBuilder;
 @SuppressWarnings("unchecked")
 public class JobInfo extends AbstractJenkins implements RunnableTask<JobInfo.Output> {
 
+    private static final Set<String> ALLOWED_ALIASES = Set.of(
+        "lastBuild",
+        "lastSuccessfulBuild",
+        "lastFailedBuild",
+        "lastCompletedBuild",
+        "lastStableBuild",
+        "lastUnstableBuild",
+        "lastUnsuccessfulBuild"
+    );
+
     @Schema(
         title = "Jenkins job path",
         description = """
@@ -80,55 +91,31 @@ public class JobInfo extends AbstractJenkins implements RunnableTask<JobInfo.Out
     @Schema(
         title = "Build number or alias",
         description = """
-            Jenkins build number (e.g. `1`) or alias such as `lastBuild`, `lastSuccessfulBuild`, `lastFailedBuild`.
+            Jenkins build number (e.g. `1`) or alias such as `lastBuild`, `lastSuccessfulBuild`, `lastFailedBuild`, `lastCompletedBuild`, `lastStableBuild`, `lastUnstableBuild`, `lastUnsuccessfulBuild`. Defaults to `lastBuild`.
             """
     )
-    @NotNull
+    @Builder.Default
     @PluginProperty(group = "main")
-    private Property<String> buildNumber;
-
-    public abstract static class JobInfoBuilder<C extends JobInfo, B extends JobInfoBuilder<C, B>> extends AbstractJenkinsBuilder<C, B> {
-        public B jobName(String jobName) {
-            this.jobName = Property.ofValue(jobName);
-            return self();
-        }
-
-        public B jobName(Property<String> jobName) {
-            this.jobName = jobName;
-            return self();
-        }
-
-        public B buildNumber(Integer buildNumber) {
-            this.buildNumber = Property.ofValue(String.valueOf(buildNumber));
-            return self();
-        }
-
-        public B buildNumber(String buildNumber) {
-            this.buildNumber = Property.ofValue(buildNumber);
-            return self();
-        }
-
-        public B buildNumber(Property<String> buildNumber) {
-            this.buildNumber = buildNumber;
-            return self();
-        }
-    }
+    private Property<String> buildNumber = Property.ofValue("lastBuild");
 
     @Override
     public Output run(RunContext runContext) throws Exception {
-        String base = runContext.render(serverUrl).as(String.class).orElseThrow();
-        if (!base.endsWith("/")) {
-            base += "/";
+        var rServerUrl = runContext.render(serverUrl).as(String.class).orElseThrow();
+        var rBase = rServerUrl.endsWith("/") ? rServerUrl : rServerUrl + "/";
+
+        var rJobName = runContext.render(jobName).as(String.class).orElseThrow();
+        var rBuild = runContext.render(buildNumber).as(String.class).orElse("lastBuild");
+
+        if (!rBuild.matches("^\\d+$") && !ALLOWED_ALIASES.contains(rBuild)) {
+            throw new IllegalArgumentException(
+                "Invalid buildNumber '" + rBuild + "'. Must be a positive integer or one of: " + ALLOWED_ALIASES
+            );
         }
 
-        String renderedJobName = runContext.render(jobName).as(String.class).orElseThrow();
-        String renderedBuild = runContext.render(buildNumber).as(String.class).orElse("lastBuild");
+        var jobPath = encodeJobPath(rJobName);
+        var uri = URI.create(rBase + jobPath + "/" + rBuild + "/api/json");
 
-        var jobPath = encodeJobPath(renderedJobName);
-
-        URI uri = URI.create(base + jobPath + "/" + renderedBuild + "/api/json");
-
-        HttpRequest.HttpRequestBuilder request = HttpRequest.builder()
+        var request = HttpRequest.builder()
             .uri(uri)
             .method("GET");
 

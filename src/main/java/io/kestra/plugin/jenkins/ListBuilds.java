@@ -1,10 +1,11 @@
 package io.kestra.plugin.jenkins;
 
+import java.io.BufferedWriter;
+import java.io.File;
+import java.io.FileWriter;
 import java.net.URI;
 import java.time.Instant;
 import java.util.*;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 import io.kestra.core.http.HttpRequest;
 import io.kestra.core.models.annotations.Example;
@@ -12,13 +13,18 @@ import io.kestra.core.models.annotations.Plugin;
 import io.kestra.core.models.annotations.PluginProperty;
 import io.kestra.core.models.property.Property;
 import io.kestra.core.models.tasks.RunnableTask;
+import io.kestra.core.models.tasks.common.FetchType;
 import io.kestra.core.runners.RunContext;
+import io.kestra.core.serializers.FileSerde;
 
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
 import lombok.*;
 import lombok.experimental.SuperBuilder;
 import lombok.extern.jackson.Jacksonized;
+import reactor.core.publisher.Flux;
 
 @SuperBuilder
 @Getter
@@ -28,7 +34,7 @@ import lombok.extern.jackson.Jacksonized;
 @Schema(
     title = "List recent builds of a Jenkins job",
     description = """
-        Retrieves builds from the Jenkins job API tree, supporting filters by build result and start time.
+        Retrieves builds from the Jenkins job API tree, supporting filters by build result and start time, with FETCH, FETCH_ONE, and STORE modes.
         """
 )
 @Plugin(
@@ -69,13 +75,23 @@ public class ListBuilds extends AbstractJenkins implements RunnableTask<ListBuil
     private Property<String> jobName;
 
     @Schema(
-        title = "Build result filter",
+        title = "The way you want to store the data",
         description = """
-            Optional filter by build result (e.g., `SUCCESS`, `FAILURE`, `UNSTABLE`, `ABORTED`). Case-insensitive.
+            FETCH_ONE to retrieve only the first build, FETCH to output as a list, STORE to store as internal storage file. Defaults to `FETCH`.
             """
     )
-    @PluginProperty(group = "advanced")
-    private Property<String> result;
+    @PluginProperty(group = "processing")
+    @Builder.Default
+    private Property<FetchType> fetchType = Property.ofValue(FetchType.FETCH);
+
+    @Schema(
+        title = "Build result filter",
+        description = """
+            Optional filter by build result: `SUCCESS`, `UNSTABLE`, `FAILURE`, `NOT_BUILT`, or `ABORTED`.
+            """
+    )
+    @PluginProperty(group = "processing")
+    private Property<BuildResult> result;
 
     @Schema(
         title = "Since timestamp",
@@ -83,36 +99,40 @@ public class ListBuilds extends AbstractJenkins implements RunnableTask<ListBuil
             Optional filter to include only builds started at or after this instant.
             """
     )
-    @PluginProperty(group = "advanced")
+    @PluginProperty(group = "processing")
     private Property<Instant> since;
 
     @Schema(
         title = "Maximum builds",
         description = """
-            Optional maximum number of builds to return.
+            Maximum number of builds to return (between 1 and 100, matching the Jenkins tree API limit). Defaults to `50`.
             """
     )
-    @PluginProperty(group = "advanced")
-    private Property<Integer> max;
+    @PluginProperty(group = "processing")
+    @Builder.Default
+    private Property<@Min(1) @Max(100) Integer> max = Property.ofValue(50);
 
     @Override
     @SuppressWarnings("unchecked")
     public Output run(RunContext runContext) throws Exception {
-        String base = runContext.render(serverUrl).as(String.class).orElseThrow();
-        if (!base.endsWith("/")) {
-            base += "/";
-        }
+        var rServerUrl = runContext.render(serverUrl).as(String.class).orElseThrow();
+        var rBase = rServerUrl.endsWith("/") ? rServerUrl : rServerUrl + "/";
 
-        String renderedJobName = runContext.render(jobName).as(String.class).orElseThrow();
-        String renderedResult = result != null ? runContext.render(result).as(String.class).orElse(null) : null;
-        Instant renderedSince = since != null ? runContext.render(since).as(Instant.class).orElse(null) : null;
-        Integer renderedMax = max != null ? runContext.render(max).as(Integer.class).orElse(null) : null;
+        var rJobName = runContext.render(jobName).as(String.class).orElseThrow();
+        var rFetchType = runContext.render(fetchType).as(FetchType.class).orElse(FetchType.FETCH);
+        var rResult = result != null ? runContext.render(result).as(BuildResult.class).orElse(null) : null;
+        var rSince = since != null ? runContext.render(since).as(Instant.class).orElse(null) : null;
+        Integer rMax = max != null ? runContext.render(max).as(Integer.class).orElse(50) : 50;
 
-        var jobPath = encodeJobPath(renderedJobName);
+        var jobPath = encodeJobPath(rJobName);
 
-        URI uri = URI.create(base + jobPath + "/api/json?tree=builds[number,url,result,building,duration,timestamp,fullDisplayName]");
+        String treeParam = (rResult == null && rSince == null && rMax != null)
+            ? "tree=builds[number,url,result,building,duration,timestamp,fullDisplayName]%7B0," + rMax + "%7D"
+            : "tree=builds[number,url,result,building,duration,timestamp,fullDisplayName]";
 
-        HttpRequest.HttpRequestBuilder request = HttpRequest.builder()
+        var uri = URI.create(rBase + jobPath + "/api/json?" + treeParam);
+
+        var request = HttpRequest.builder()
             .uri(uri)
             .method("GET");
 
@@ -123,43 +143,62 @@ public class ListBuilds extends AbstractJenkins implements RunnableTask<ListBuil
             rawBuilds = (List<Map<String, Object>>) list;
         }
 
-        Stream<BuildSummary> stream = rawBuilds.stream().map(
-            b -> BuildSummary.builder()
-                .number(b.get("number") instanceof Number n ? n.intValue() : null)
-                .url(b.get("url") instanceof String u ? u : null)
-                .result(b.get("result") instanceof String r ? r : null)
-                .building(b.get("building") instanceof Boolean bld ? bld : null)
-                .duration(b.get("duration") instanceof Number n ? n.longValue() : null)
-                .timestamp(b.get("timestamp") instanceof Number n ? Instant.ofEpochMilli(n.longValue()) : null)
-                .fullDisplayName(b.get("fullDisplayName") instanceof String d ? d : null)
-                .build()
-        );
+        var stream = rawBuilds.stream().map(BuildSummary::from);
 
-        if (renderedResult != null) {
-            stream = stream.filter(b -> renderedResult.equalsIgnoreCase(b.getResult()));
+        if (rResult != null) {
+            stream = stream.filter(b -> rResult.name().equalsIgnoreCase(b.getResult()));
         }
 
-        if (renderedSince != null) {
-            stream = stream.filter(b -> b.getTimestamp() != null && !b.getTimestamp().isBefore(renderedSince));
+        if (rSince != null) {
+            stream = stream.filter(b -> b.getTimestamp() != null && !b.getTimestamp().isBefore(rSince));
         }
 
-        if (renderedMax != null && renderedMax > 0) {
-            stream = stream.limit(renderedMax);
+        if (rMax != null && rMax > 0) {
+            stream = stream.limit(rMax);
         }
 
-        List<BuildSummary> builds = stream.collect(Collectors.toList());
+        List<BuildSummary> builds = stream.toList();
 
-        return Output.builder()
-            .builds(builds)
-            .size(builds.size())
-            .build();
+        Output.OutputBuilder outputBuilder = Output.builder()
+            .size(builds.size());
+
+        switch (rFetchType) {
+            case FETCH_ONE -> {
+                if (!builds.isEmpty()) {
+                    outputBuilder.build(builds.getFirst());
+                }
+            }
+            case STORE -> {
+                if (!builds.isEmpty()) {
+                    File tempFile = runContext.workingDir().createTempFile(".ion").toFile();
+                    try (var fileWriter = new BufferedWriter(new FileWriter(tempFile), FileSerde.BUFFER_SIZE)) {
+                        Flux<BuildSummary> flux = Flux.fromIterable(builds);
+                        FileSerde.writeAll(fileWriter, flux).block();
+                    }
+                    outputBuilder.uri(runContext.storage().putFile(tempFile));
+                }
+            }
+            case FETCH -> {
+                outputBuilder.builds(builds);
+            }
+            case NONE -> {
+            }
+        }
+
+        return outputBuilder.build();
     }
 
     @Builder
     @Getter
     public static class Output implements io.kestra.core.models.tasks.Output {
-        @Schema(title = "List of builds matching the criteria")
+        @Schema(title = "List of builds matching the criteria (when fetchType is FETCH)")
         private final List<BuildSummary> builds;
+
+        @Schema(title = "Single build (when fetchType is FETCH_ONE)")
+        private final BuildSummary build;
+
+        @Schema(title = "URI of the stored builds file in internal storage (when fetchType is STORE)")
+        private final URI uri;
 
         @Schema(title = "Number of builds returned")
         private final Integer size;
@@ -189,5 +228,20 @@ public class ListBuilds extends AbstractJenkins implements RunnableTask<ListBuil
 
         @Schema(title = "Full display name of the build")
         private final String fullDisplayName;
+
+        public static BuildSummary from(Map<String, Object> b) {
+            if (b == null) {
+                return null;
+            }
+            return BuildSummary.builder()
+                .number(b.get("number") instanceof Number n ? n.intValue() : null)
+                .url(b.get("url") instanceof String u ? u : null)
+                .result(b.get("result") instanceof String r ? r : null)
+                .building(b.get("building") instanceof Boolean bld ? bld : null)
+                .duration(b.get("duration") instanceof Number n ? n.longValue() : null)
+                .timestamp(b.get("timestamp") instanceof Number n ? Instant.ofEpochMilli(n.longValue()) : null)
+                .fullDisplayName(b.get("fullDisplayName") instanceof String d ? d : null)
+                .build();
+        }
     }
 }

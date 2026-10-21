@@ -5,7 +5,8 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.TimeoutException;
-import java.util.regex.Matcher;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.Pattern;
 
 import org.apache.hc.core5.http.ContentType;
@@ -13,6 +14,7 @@ import org.slf4j.Logger;
 
 import io.kestra.core.http.HttpRequest;
 import io.kestra.core.http.HttpResponse;
+import io.kestra.core.http.client.HttpClientResponseException;
 import io.kestra.core.models.annotations.Example;
 import io.kestra.core.models.annotations.Plugin;
 import io.kestra.core.models.annotations.PluginProperty;
@@ -75,7 +77,7 @@ import lombok.experimental.SuperBuilder;
                     parameters:
                       DEPLOY_ENV: staging
                     wait: true
-                    timeout: PT30M
+                    waitTimeout: PT30M
                 """
         )
     }
@@ -83,6 +85,20 @@ import lombok.experimental.SuperBuilder;
 public class JobBuild extends AbstractJenkins implements RunnableTask<JobBuild.Output> {
 
     private static final Pattern QUEUE_ITEM_PATTERN = Pattern.compile(".*/queue/item/(\\d+)/?.*");
+
+    @Getter(AccessLevel.NONE)
+    @Setter(AccessLevel.NONE)
+    @Schema(hidden = true)
+    @ToString.Exclude
+    @EqualsAndHashCode.Exclude
+    private final transient AtomicReference<Runnable> killable = new AtomicReference<>();
+
+    @Getter(AccessLevel.NONE)
+    @Setter(AccessLevel.NONE)
+    @Schema(hidden = true)
+    @ToString.Exclude
+    @EqualsAndHashCode.Exclude
+    private final transient AtomicBoolean isKilled = new AtomicBoolean(false);
 
     @Schema(
         title = "Jenkins job path",
@@ -116,7 +132,7 @@ public class JobBuild extends AbstractJenkins implements RunnableTask<JobBuild.O
     @Schema(
         title = "Polling interval",
         description = """
-            Frequency at which to poll the queue item and build endpoint when `wait` is true.
+            Frequency at which to poll the queue item and build endpoint when `wait` is true. Minimum duration is 1 second. Defaults to `PT2S`.
             """
     )
     @Builder.Default
@@ -124,14 +140,14 @@ public class JobBuild extends AbstractJenkins implements RunnableTask<JobBuild.O
     private Property<Duration> pollInterval = Property.ofValue(Duration.ofSeconds(2));
 
     @Schema(
-        title = "Execution timeout",
+        title = "Wait timeout",
         description = """
-            Maximum duration to wait for the build to finish before timing out.
+            Maximum duration to wait for the build to finish before timing out. Defaults to `PT10M`.
             """
     )
     @Builder.Default
     @PluginProperty(group = "advanced")
-    private Property<Duration> timeout = Property.ofValue(Duration.ofMinutes(10));
+    private Property<Duration> waitTimeout = Property.ofValue(Duration.ofMinutes(10));
 
     @Schema(
         title = "Cancel build on timeout",
@@ -154,22 +170,34 @@ public class JobBuild extends AbstractJenkins implements RunnableTask<JobBuild.O
     private Property<List<String>> allowedStatuses = Property.ofValue(List.of("SUCCESS"));
 
     @Override
+    public void kill() {
+        if (isKilled.compareAndSet(false, true)) {
+            Optional.ofNullable(killable.get()).ifPresent(Runnable::run);
+        }
+    }
+
+    @Override
+    public void stop() {
+        kill();
+    }
+
+    @Override
     public Output run(RunContext runContext) throws Exception {
-        Logger logger = runContext.logger();
+        var logger = runContext.logger();
 
-        String renderedJobName = runContext.render(jobName).as(String.class).orElseThrow();
-        Map<String, Object> renderedParams = runContext.render(parameters).asMap(String.class, Object.class);
+        var rJobName = runContext.render(jobName).as(String.class).orElseThrow();
+        var renderedParams = runContext.render(parameters).asMap(String.class, Object.class);
 
-        var jobPath = encodeJobPath(renderedJobName);
+        var jobPath = encodeJobPath(rJobName);
 
-        String renderedUri = runContext.render(serverUrl)
+        var rServerUrl = runContext.render(serverUrl)
             .as(String.class)
             .map(u -> u.endsWith("/") ? u : u + "/")
             .orElseThrow();
 
-        URI uri = URI.create(renderedUri + jobPath + "/buildWithParameters");
+        var uri = URI.create(rServerUrl + jobPath + "/buildWithParameters");
 
-        HttpRequest.HttpRequestBuilder requestBuilder = HttpRequest.builder()
+        var requestBuilder = HttpRequest.builder()
             .uri(uri)
             .addHeader("Content-Type", ContentType.APPLICATION_FORM_URLENCODED.getMimeType())
             .method("POST")
@@ -177,28 +205,28 @@ public class JobBuild extends AbstractJenkins implements RunnableTask<JobBuild.O
 
         HttpResponse<Void> response = this.request(runContext, requestBuilder, Void.class);
 
-        logger.info("Triggered job '{}' with status code: {}", renderedJobName, response.getStatus().getCode());
+        logger.info("Triggered job '{}' with status code: {}", rJobName, response.getStatus().getCode());
 
-        String locationHeader = Optional.ofNullable(response.getHeaders())
+        var locationHeader = Optional.ofNullable(response.getHeaders())
             .flatMap(h -> h.firstValue("Location"))
             .orElse(null);
 
         Long queueId = null;
         if (locationHeader != null) {
-            Matcher matcher = QUEUE_ITEM_PATTERN.matcher(locationHeader);
+            var matcher = QUEUE_ITEM_PATTERN.matcher(locationHeader);
             if (matcher.find()) {
                 queueId = Long.parseLong(matcher.group(1));
             }
         }
 
-        Boolean shouldWait = runContext.render(wait).as(Boolean.class).orElse(false);
+        var rWait = runContext.render(wait).as(Boolean.class).orElse(false);
 
-        if (!Boolean.TRUE.equals(shouldWait)) {
+        if (!Boolean.TRUE.equals(rWait)) {
             Integer buildNumber = null;
             String buildUrl = null;
             if (queueId != null) {
                 try {
-                    Map<String, Object> queueItem = getQueueItem(runContext, renderedUri, locationHeader, queueId);
+                    var queueItem = getQueueItem(runContext, rServerUrl, queueId);
                     if (queueItem != null && queueItem.get("executable") instanceof Map<?, ?> exec) {
                         buildNumber = exec.get("number") instanceof Number n ? n.intValue() : null;
                         buildUrl = exec.get("url") instanceof String u ? u : null;
@@ -216,95 +244,42 @@ public class JobBuild extends AbstractJenkins implements RunnableTask<JobBuild.O
                 .build();
         }
 
-        Duration timeoutVal = runContext.render(timeout).as(Duration.class).orElse(Duration.ofMinutes(10));
-        Duration pollIntervalVal = runContext.render(pollInterval).as(Duration.class).orElse(Duration.ofSeconds(2));
-        Boolean cancelOnTimeoutVal = runContext.render(cancelOnTimeout).as(Boolean.class).orElse(false);
-        List<String> allowedStatusesVal = runContext.render(allowedStatuses).asList(String.class);
-
-        Instant start = Instant.now();
-        Integer buildNumber = null;
-        String buildUrl = null;
-
-        // 1. Wait for queue item to produce executable build number
-        if (queueId != null) {
-            while (Instant.now().isBefore(start.plus(timeoutVal))) {
-                Map<String, Object> queueItem;
-                try {
-                    queueItem = getQueueItem(runContext, renderedUri, locationHeader, queueId);
-                } catch (Exception e) {
-                    logger.debug("Waiting for queue item {} (error: {})", queueId, e.getMessage());
-                    queueItem = null;
-                }
-
-                if (queueItem != null) {
-                    if (Boolean.TRUE.equals(queueItem.get("cancelled"))) {
-                        throw new IllegalStateException("Jenkins build was cancelled while waiting in queue: " + queueId);
-                    }
-                    if (queueItem.get("executable") instanceof Map<?, ?> exec) {
-                        buildNumber = exec.get("number") instanceof Number n ? n.intValue() : null;
-                        buildUrl = exec.get("url") instanceof String u ? u : null;
-                        if (buildNumber != null) {
-                            break;
-                        }
-                    }
-                }
-
-                try {
-                    Thread.sleep(pollIntervalVal.toMillis());
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    throw new RuntimeException("Interrupted while polling Jenkins queue", e);
-                }
-            }
-
-            if (buildNumber == null) {
-                if (Boolean.TRUE.equals(cancelOnTimeoutVal)) {
-                    cancelQueueItem(runContext, renderedUri, queueId, logger);
-                }
-                throw new TimeoutException("Jenkins build timed out while in queue after " + timeoutVal);
-            }
+        if (queueId == null) {
+            throw new IllegalStateException("Jenkins returned no queue Location header when wait was requested. Check Jenkins configuration or reverse proxy.");
         }
 
-        // 2. Wait for build to complete (building == false)
-        Map<String, Object> buildInfo = null;
-        String result = null;
+        final Long finalQueueId = queueId;
+        killable.set(() -> cancelQueueItem(runContext, rServerUrl, finalQueueId, logger));
 
-        while (Instant.now().isBefore(start.plus(timeoutVal))) {
-            try {
-                buildInfo = getBuildInfo(runContext, renderedUri, jobPath, buildNumber);
-            } catch (Exception e) {
-                logger.debug("Waiting for build #{} (error: {})", buildNumber, e.getMessage());
-                buildInfo = null;
-            }
-
-            if (buildInfo != null) {
-                Boolean isBuilding = (Boolean) buildInfo.get("building");
-                if (Boolean.FALSE.equals(isBuilding)) {
-                    result = (String) buildInfo.get("result");
-                    break;
-                }
-            }
-
-            try {
-                Thread.sleep(pollIntervalVal.toMillis());
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                throw new RuntimeException("Interrupted while polling Jenkins build", e);
-            }
+        var rWaitTimeout = runContext.render(waitTimeout).as(Duration.class).orElse(Duration.ofMinutes(10));
+        if (rWaitTimeout.isNegative() || rWaitTimeout.isZero()) {
+            throw new IllegalArgumentException("waitTimeout must be positive, got: " + rWaitTimeout);
         }
 
-        if (buildInfo == null || Boolean.TRUE.equals(buildInfo.get("building"))) {
-            if (Boolean.TRUE.equals(cancelOnTimeoutVal) && buildNumber != null) {
-                stopBuild(runContext, renderedUri, jobPath, buildNumber, logger);
-            }
-            throw new TimeoutException("Jenkins build #" + buildNumber + " timed out after " + timeoutVal);
+        var rPollInterval = runContext.render(pollInterval).as(Duration.class).orElse(Duration.ofSeconds(2));
+        if (rPollInterval.isNegative() || rPollInterval.isZero()) {
+            throw new IllegalArgumentException("pollInterval must be positive, got: " + rPollInterval);
         }
+        var rCancelOnTimeout = runContext.render(cancelOnTimeout).as(Boolean.class).orElse(false);
+        var rAllowedStatuses = runContext.render(allowedStatuses).asList(String.class);
 
-        if (allowedStatusesVal != null && !allowedStatusesVal.isEmpty()) {
+        var start = Instant.now();
+        var buildDetails = waitForQueueItem(runContext, rServerUrl, queueId, start, rWaitTimeout, rPollInterval, rCancelOnTimeout, logger);
+        Integer buildNumber = buildDetails.buildNumber;
+        String buildUrl = buildDetails.buildUrl;
+
+        final Integer finalBuildNumber = buildNumber;
+        killable.set(() -> stopBuild(runContext, rServerUrl, jobPath, finalBuildNumber, logger));
+
+        var completedBuild = waitForBuildCompletion(runContext, rServerUrl, jobPath, buildNumber, start, rWaitTimeout, rPollInterval, rCancelOnTimeout, logger);
+        var buildInfo = completedBuild.buildInfo;
+        var result = completedBuild.result;
+
+        if (rAllowedStatuses != null && !rAllowedStatuses.isEmpty()) {
             final String finalResult = result;
-            boolean allowed = allowedStatusesVal.stream().anyMatch(s -> s.equalsIgnoreCase(finalResult));
+            var allowed = rAllowedStatuses.stream().anyMatch(s -> s.equalsIgnoreCase(finalResult));
             if (!allowed) {
-                throw new IllegalStateException("Jenkins build #" + buildNumber + " completed with result '" + result + "', but expected one of " + allowedStatusesVal);
+                throw new IllegalStateException("Jenkins build #" + buildNumber + " completed with result '" + result + "', but expected one of " + rAllowedStatuses);
             }
         }
 
@@ -318,22 +293,131 @@ public class JobBuild extends AbstractJenkins implements RunnableTask<JobBuild.O
             .build();
     }
 
-    @SuppressWarnings("unchecked")
-    private Map<String, Object> getQueueItem(RunContext runContext, String serverUrl, String locationHeader, Long queueId) throws Exception {
-        URI uri;
-        if (locationHeader != null && (locationHeader.startsWith("http://") || locationHeader.startsWith("https://"))) {
-            String base = locationHeader.endsWith("/") ? locationHeader : locationHeader + "/";
-            uri = URI.create(base + "api/json");
-        } else {
-            uri = URI.create(serverUrl + "queue/item/" + queueId + "/api/json");
+    private record QueueResult(Integer buildNumber, String buildUrl) {
+    }
+
+    private QueueResult waitForQueueItem(
+        RunContext runContext,
+        String rServerUrl,
+        Long queueId,
+        Instant start,
+        Duration rWaitTimeout,
+        Duration rPollInterval,
+        Boolean rCancelOnTimeout,
+        Logger logger) throws Exception {
+        Integer buildNumber = null;
+        String buildUrl = null;
+
+        while (Instant.now().isBefore(start.plus(rWaitTimeout))) {
+            Map<String, Object> queueItem;
+            try {
+                queueItem = getQueueItem(runContext, rServerUrl, queueId);
+            } catch (HttpClientResponseException e) {
+                if (
+                    e.getResponse() != null && e.getResponse().getStatus() != null &&
+                        (e.getResponse().getStatus().getCode() == 401 || e.getResponse().getStatus().getCode() == 403)
+                ) {
+                    throw new IllegalStateException("Authentication or authorization failed while polling Jenkins queue " + queueId + ": " + e.getMessage(), e);
+                }
+                logger.warn("Transient error while waiting for queue item {}: {}", queueId, e.getMessage());
+                queueItem = null;
+            } catch (Exception e) {
+                logger.warn("Transient error while waiting for queue item {}: {}", queueId, e.getMessage());
+                queueItem = null;
+            }
+
+            if (queueItem != null) {
+                if (Boolean.TRUE.equals(queueItem.get("cancelled"))) {
+                    throw new IllegalStateException("Jenkins build was cancelled while waiting in queue: " + queueId);
+                }
+                if (queueItem.get("executable") instanceof Map<?, ?> exec) {
+                    buildNumber = exec.get("number") instanceof Number n ? n.intValue() : null;
+                    buildUrl = exec.get("url") instanceof String u ? u : null;
+                    if (buildNumber != null) {
+                        return new QueueResult(buildNumber, buildUrl);
+                    }
+                }
+            }
+
+            try {
+                Thread.sleep(rPollInterval.toMillis());
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new RuntimeException("Interrupted while polling Jenkins queue", e);
+            }
         }
+
+        if (Boolean.TRUE.equals(rCancelOnTimeout)) {
+            cancelQueueItem(runContext, rServerUrl, queueId, logger);
+        }
+        throw new TimeoutException("Jenkins build timed out while in queue after " + rWaitTimeout);
+    }
+
+    private record BuildCompletion(Map<String, Object> buildInfo, String result) {
+    }
+
+    private BuildCompletion waitForBuildCompletion(
+        RunContext runContext,
+        String rServerUrl,
+        String jobPath,
+        Integer buildNumber,
+        Instant start,
+        Duration rWaitTimeout,
+        Duration rPollInterval,
+        Boolean rCancelOnTimeout,
+        Logger logger) throws Exception {
+        Map<String, Object> buildInfo = null;
+        String result = null;
+
+        while (Instant.now().isBefore(start.plus(rWaitTimeout))) {
+            try {
+                buildInfo = getBuildInfo(runContext, rServerUrl, jobPath, buildNumber);
+            } catch (HttpClientResponseException e) {
+                if (
+                    e.getResponse() != null && e.getResponse().getStatus() != null &&
+                        (e.getResponse().getStatus().getCode() == 401 || e.getResponse().getStatus().getCode() == 403)
+                ) {
+                    throw new IllegalStateException("Authentication or authorization failed while polling Jenkins build #" + buildNumber + ": " + e.getMessage(), e);
+                }
+                logger.warn("Transient error while waiting for build #{}: {}", buildNumber, e.getMessage());
+                buildInfo = null;
+            } catch (Exception e) {
+                logger.warn("Transient error while waiting for build #{}: {}", buildNumber, e.getMessage());
+                buildInfo = null;
+            }
+
+            if (buildInfo != null) {
+                Boolean isBuilding = (Boolean) buildInfo.get("building");
+                if (Boolean.FALSE.equals(isBuilding)) {
+                    result = (String) buildInfo.get("result");
+                    return new BuildCompletion(buildInfo, result);
+                }
+            }
+
+            try {
+                Thread.sleep(rPollInterval.toMillis());
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new RuntimeException("Interrupted while polling Jenkins build", e);
+            }
+        }
+
+        if (Boolean.TRUE.equals(rCancelOnTimeout) && buildNumber != null) {
+            stopBuild(runContext, rServerUrl, jobPath, buildNumber, logger);
+        }
+        throw new TimeoutException("Jenkins build #" + buildNumber + " timed out after " + rWaitTimeout);
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> getQueueItem(RunContext runContext, String serverUrl, Long queueId) throws Exception {
+        var uri = URI.create(serverUrl + "queue/item/" + queueId + "/api/json");
         var req = HttpRequest.builder().uri(uri).method("GET");
         return this.request(runContext, req, Map.class).getBody();
     }
 
     private void cancelQueueItem(RunContext runContext, String serverUrl, Long queueId, Logger logger) {
         try {
-            URI uri = URI.create(serverUrl + "queue/cancelItem?id=" + queueId);
+            var uri = URI.create(serverUrl + "queue/cancelItem?id=" + queueId);
             var req = HttpRequest.builder().uri(uri).method("POST");
             this.request(runContext, req, Void.class);
             logger.info("Cancelled Jenkins queue item {}", queueId);
@@ -344,14 +428,14 @@ public class JobBuild extends AbstractJenkins implements RunnableTask<JobBuild.O
 
     @SuppressWarnings("unchecked")
     private Map<String, Object> getBuildInfo(RunContext runContext, String serverUrl, String jobPath, Integer buildNumber) throws Exception {
-        URI uri = URI.create(serverUrl + jobPath + "/" + buildNumber + "/api/json");
+        var uri = URI.create(serverUrl + jobPath + "/" + buildNumber + "/api/json");
         var req = HttpRequest.builder().uri(uri).method("GET");
         return this.request(runContext, req, Map.class).getBody();
     }
 
     private void stopBuild(RunContext runContext, String serverUrl, String jobPath, Integer buildNumber, Logger logger) {
         try {
-            URI uri = URI.create(serverUrl + jobPath + "/" + buildNumber + "/stop");
+            var uri = URI.create(serverUrl + jobPath + "/" + buildNumber + "/stop");
             var req = HttpRequest.builder().uri(uri).method("POST");
             this.request(runContext, req, Void.class);
             logger.info("Stopped Jenkins build #{}", buildNumber);

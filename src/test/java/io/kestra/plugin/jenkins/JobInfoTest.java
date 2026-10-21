@@ -17,6 +17,7 @@ import jakarta.inject.Inject;
 import static com.github.tomakehurst.wiremock.client.WireMock.*;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.*;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 @KestraTest
 @WireMockTest(httpPort = 8082)
@@ -47,8 +48,8 @@ class JobInfoTest {
         RunContext runContext = runContextFactory.of(Map.of());
 
         JobInfo task = JobInfo.builder()
-            .jobName("test-job")
-            .buildNumber(1)
+            .jobName(Property.ofValue("test-job"))
+            .buildNumber(Property.ofValue("1"))
             .username(Property.ofValue("admin"))
             .apiToken(Property.ofValue("token"))
             .serverUrl(Property.ofValue(wm.getHttpBaseUrl()))
@@ -88,8 +89,8 @@ class JobInfoTest {
         RunContext runContext = runContextFactory.of(Map.of());
 
         JobInfo task = JobInfo.builder()
-            .jobName("test-job")
-            .buildNumber("lastBuild")
+            .jobName(Property.ofValue("test-job"))
+            .buildNumber(Property.ofValue("lastBuild"))
             .username(Property.ofValue("admin"))
             .apiToken(Property.ofValue("token"))
             .serverUrl(Property.ofValue(wm.getHttpBaseUrl()))
@@ -121,8 +122,8 @@ class JobInfoTest {
         var runContext = runContextFactory.of(Map.of());
 
         var task = JobInfo.builder()
-            .jobName("My Job")
-            .buildNumber(1)
+            .jobName(Property.ofValue("My Job"))
+            .buildNumber(Property.ofValue("1"))
             .username(Property.ofValue("admin"))
             .apiToken(Property.ofValue("token"))
             .serverUrl(Property.ofValue(wm.getHttpBaseUrl()))
@@ -152,8 +153,8 @@ class JobInfoTest {
         var runContext = runContextFactory.of(Map.of());
 
         var task = JobInfo.builder()
-            .jobName("team/My Job")
-            .buildNumber(1)
+            .jobName(Property.ofValue("team/My Job"))
+            .buildNumber(Property.ofValue("1"))
             .username(Property.ofValue("admin"))
             .apiToken(Property.ofValue("token"))
             .serverUrl(Property.ofValue(wm.getHttpBaseUrl()))
@@ -163,5 +164,20 @@ class JobInfoTest {
 
         assertThat(output.getInfo().get("result"), is("SUCCESS"));
         verify(getRequestedFor(urlEqualTo("/job/team/job/My%20Job/1/api/json")));
+    }
+
+    @Test
+    void rejectsInvalidBuildNumberTraversal(WireMockRuntimeInfo wm) {
+        var runContext = runContextFactory.of(Map.of());
+
+        var task = JobInfo.builder()
+            .jobName(Property.ofValue("test-job"))
+            .buildNumber(Property.ofValue("../../arbitrary"))
+            .username(Property.ofValue("admin"))
+            .apiToken(Property.ofValue("token"))
+            .serverUrl(Property.ofValue(wm.getHttpBaseUrl()))
+            .build();
+
+        assertThrows(IllegalArgumentException.class, () -> task.run(runContext));
     }
 }

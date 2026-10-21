@@ -3,6 +3,7 @@ package io.kestra.plugin.jenkins;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeoutException;
 
 import org.junit.jupiter.api.Test;
 
@@ -171,7 +172,7 @@ class JobBuildTest {
             .serverUrl(Property.ofValue(wm.getHttpBaseUrl()))
             .wait(Property.ofValue(true))
             .pollInterval(Property.ofValue(Duration.ofMillis(50)))
-            .timeout(Property.ofValue(Duration.ofSeconds(5)))
+            .waitTimeout(Property.ofValue(Duration.ofSeconds(5)))
             .build();
 
         JobBuild.Output output = jobBuild.run(runContext);
@@ -229,7 +230,7 @@ class JobBuildTest {
             .serverUrl(Property.ofValue(wm.getHttpBaseUrl()))
             .wait(Property.ofValue(true))
             .pollInterval(Property.ofValue(Duration.ofMillis(50)))
-            .timeout(Property.ofValue(Duration.ofSeconds(5)))
+            .waitTimeout(Property.ofValue(Duration.ofSeconds(5)))
             .allowedStatuses(Property.ofValue(List.of("SUCCESS")))
             .build();
 
@@ -266,9 +267,110 @@ class JobBuildTest {
             .serverUrl(Property.ofValue(wm.getHttpBaseUrl()))
             .wait(Property.ofValue(true))
             .pollInterval(Property.ofValue(Duration.ofMillis(50)))
-            .timeout(Property.ofValue(Duration.ofSeconds(5)))
+            .waitTimeout(Property.ofValue(Duration.ofSeconds(5)))
             .build();
 
         assertThrows(IllegalStateException.class, () -> jobBuild.run(runContext));
+    }
+
+    @Test
+    void triggerJenkinsJobTimeoutWithCancelQueueItem(WireMockRuntimeInfo wm) {
+        stubFor(
+            post(urlEqualTo("/job/test-job/buildWithParameters"))
+                .willReturn(
+                    aResponse()
+                        .withStatus(201)
+                        .withHeader("Location", wm.getHttpBaseUrl() + "/queue/item/103/")
+                )
+        );
+
+        stubFor(
+            get(urlEqualTo("/queue/item/103/api/json"))
+                .willReturn(
+                    okJson("""
+                        {
+                          "id": 103,
+                          "blocked": true
+                        }
+                        """)
+                )
+        );
+
+        stubFor(
+            post(urlEqualTo("/queue/cancelItem?id=103"))
+                .willReturn(ok())
+        );
+
+        RunContext runContext = runContextFactory.of(Map.of());
+
+        JobBuild jobBuild = JobBuild.builder()
+            .jobName(Property.ofValue("test-job"))
+            .serverUrl(Property.ofValue(wm.getHttpBaseUrl()))
+            .wait(Property.ofValue(true))
+            .cancelOnTimeout(Property.ofValue(true))
+            .pollInterval(Property.ofValue(Duration.ofMillis(50)))
+            .waitTimeout(Property.ofValue(Duration.ofMillis(120)))
+            .build();
+
+        assertThrows(TimeoutException.class, () -> jobBuild.run(runContext));
+        verify(postRequestedFor(urlEqualTo("/queue/cancelItem?id=103")));
+    }
+
+    @Test
+    void triggerJenkinsJobTimeoutWithStopBuild(WireMockRuntimeInfo wm) {
+        stubFor(
+            post(urlEqualTo("/job/test-job/buildWithParameters"))
+                .willReturn(
+                    aResponse()
+                        .withStatus(201)
+                        .withHeader("Location", wm.getHttpBaseUrl() + "/queue/item/104/")
+                )
+        );
+
+        stubFor(
+            get(urlEqualTo("/queue/item/104/api/json"))
+                .willReturn(
+                    okJson("""
+                        {
+                          "id": 104,
+                          "executable": {
+                            "number": 17,
+                            "url": "http://localhost:8082/job/test-job/17/"
+                          }
+                        }
+                        """)
+                )
+        );
+
+        stubFor(
+            get(urlEqualTo("/job/test-job/17/api/json"))
+                .willReturn(
+                    okJson("""
+                        {
+                          "number": 17,
+                          "building": true
+                        }
+                        """)
+                )
+        );
+
+        stubFor(
+            post(urlEqualTo("/job/test-job/17/stop"))
+                .willReturn(ok())
+        );
+
+        RunContext runContext = runContextFactory.of(Map.of());
+
+        JobBuild jobBuild = JobBuild.builder()
+            .jobName(Property.ofValue("test-job"))
+            .serverUrl(Property.ofValue(wm.getHttpBaseUrl()))
+            .wait(Property.ofValue(true))
+            .cancelOnTimeout(Property.ofValue(true))
+            .pollInterval(Property.ofValue(Duration.ofMillis(50)))
+            .waitTimeout(Property.ofValue(Duration.ofMillis(120)))
+            .build();
+
+        assertThrows(TimeoutException.class, () -> jobBuild.run(runContext));
+        verify(postRequestedFor(urlEqualTo("/job/test-job/17/stop")));
     }
 }
