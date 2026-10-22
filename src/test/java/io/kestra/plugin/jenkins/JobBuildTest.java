@@ -11,6 +11,7 @@ import com.github.tomakehurst.wiremock.junit5.WireMockRuntimeInfo;
 import com.github.tomakehurst.wiremock.junit5.WireMockTest;
 import com.github.tomakehurst.wiremock.stubbing.Scenario;
 
+import io.kestra.core.http.client.HttpClientResponseException;
 import io.kestra.core.junit.annotations.KestraTest;
 import io.kestra.core.models.property.Property;
 import io.kestra.core.runners.RunContext;
@@ -547,7 +548,7 @@ class JobBuildTest {
             .build();
 
         var exception = assertThrows(
-            io.kestra.core.http.client.HttpClientResponseException.class,
+            HttpClientResponseException.class,
             () -> jobBuild.run(runContext)
         );
 

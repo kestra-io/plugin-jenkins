@@ -216,7 +216,7 @@ public class JobBuild extends AbstractJenkins implements RunnableTask<JobBuild.O
                 try {
                     rAllowedStatuses = runContext.render(allowedStatuses).asList(BuildResult.class);
                 } catch (Exception e) {
-                    throw new IllegalArgumentException("allowedStatuses must contain only " + Arrays.toString(BuildResult.values()) + " (upper case)", e);
+                    throw new IllegalArgumentException("allowedStatuses must contain only " + Arrays.toString(BuildResult.values()) + " (upper case): " + e.getMessage(), e);
                 }
             } else {
                 rAllowedStatuses = List.of(BuildResult.SUCCESS);
