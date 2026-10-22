@@ -111,6 +111,10 @@ public abstract class AbstractJenkins extends Task {
             var bodyStr = bodyObj instanceof byte[] bytes
                 ? new String(bytes, StandardCharsets.UTF_8)
                 : String.valueOf(bodyObj);
+            if (bodyStr != null && bodyStr.length() > 1000) {
+                var totalBytes = bodyObj instanceof byte[] bytes ? bytes.length : bodyStr.getBytes(StandardCharsets.UTF_8).length;
+                bodyStr = bodyStr.substring(0, 1000) + "... (truncated, " + totalBytes + " bytes)";
+            }
             throw new HttpClientResponseException(
                 "Request failed '" + statusCode + "' and body '" + bodyStr + "'",
                 e.getResponse()

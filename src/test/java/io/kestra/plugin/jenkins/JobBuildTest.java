@@ -498,4 +498,60 @@ class JobBuildTest {
         assertThat(output.getBuildNumber(), is(25));
         assertThat(output.getResult(), is("SUCCESS"));
     }
+
+    @Test
+    void triggerJenkinsJobBadAllowedStatusesThrowsBeforePost(WireMockRuntimeInfo wm) {
+        stubFor(
+            post(urlEqualTo("/job/test-job/buildWithParameters"))
+                .willReturn(aResponse().withStatus(201))
+        );
+
+        RunContext runContext = runContextFactory.of(Map.of("badStatus", List.of("success")));
+
+        JobBuild jobBuild = JobBuild.builder()
+            .jobName(Property.ofValue("test-job"))
+            .serverUrl(Property.ofValue(wm.getHttpBaseUrl()))
+            .wait(Property.ofValue(true))
+            .allowedStatuses(Property.ofExpression("{{ badStatus }}"))
+            .build();
+
+        IllegalArgumentException exception = assertThrows(
+            IllegalArgumentException.class,
+            () -> jobBuild.run(runContext)
+        );
+
+        assertThat(
+            exception.getMessage(),
+            containsString("allowedStatuses must contain only [SUCCESS, UNSTABLE, FAILURE, NOT_BUILT, ABORTED] (upper case)")
+        );
+        verify(0, postRequestedFor(urlEqualTo("/job/test-job/buildWithParameters")));
+    }
+
+    @Test
+    void triggerJenkinsJobLongErrorBodyIsTruncated(WireMockRuntimeInfo wm) {
+        String longBody = "A".repeat(1500);
+        stubFor(
+            post(urlEqualTo("/job/test-job/buildWithParameters"))
+                .willReturn(
+                    aResponse()
+                        .withStatus(500)
+                        .withBody(longBody)
+                )
+        );
+
+        RunContext runContext = runContextFactory.of(Map.of());
+
+        JobBuild jobBuild = JobBuild.builder()
+            .jobName(Property.ofValue("test-job"))
+            .serverUrl(Property.ofValue(wm.getHttpBaseUrl()))
+            .build();
+
+        var exception = assertThrows(
+            io.kestra.core.http.client.HttpClientResponseException.class,
+            () -> jobBuild.run(runContext)
+        );
+
+        assertThat(exception.getMessage(), containsString("... (truncated, 1500 bytes)"));
+        assertThat(exception.getMessage(), not(containsString(longBody)));
+    }
 }

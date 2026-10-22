@@ -212,7 +212,15 @@ public class JobBuild extends AbstractJenkins implements RunnableTask<JobBuild.O
                 throw new IllegalArgumentException("pollInterval must be positive, got: " + rPollInterval);
             }
             rCancelOnTimeout = runContext.render(cancelOnTimeout).as(Boolean.class).orElse(false);
-            rAllowedStatuses = runContext.render(allowedStatuses).asList(BuildResult.class);
+            if (allowedStatuses != null) {
+                try {
+                    rAllowedStatuses = runContext.render(allowedStatuses).asList(BuildResult.class);
+                } catch (Exception e) {
+                    throw new IllegalArgumentException("allowedStatuses must contain only " + Arrays.toString(BuildResult.values()) + " (upper case)", e);
+                }
+            } else {
+                rAllowedStatuses = List.of(BuildResult.SUCCESS);
+            }
         }
 
         var requestBuilder = HttpRequest.builder()
@@ -269,8 +277,8 @@ public class JobBuild extends AbstractJenkins implements RunnableTask<JobBuild.O
 
         var start = Instant.now();
         var buildDetails = waitForQueueItem(runContext, rServerUrl, queueId, start, rWaitTimeout, rPollInterval, rCancelOnTimeout, logger);
-        Integer buildNumber = buildDetails.buildNumber;
-        String buildUrl = buildDetails.buildUrl;
+        var buildNumber = buildDetails.buildNumber;
+        var buildUrl = buildDetails.buildUrl;
 
         final Integer finalBuildNumber = buildNumber;
         killable.set(() -> stopBuild(runContext, rServerUrl, jobPath, finalBuildNumber, logger));
