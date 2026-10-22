@@ -196,6 +196,25 @@ public class JobBuild extends AbstractJenkins implements RunnableTask<JobBuild.O
 
         var uri = URI.create(rServerUrl + jobPath + "/buildWithParameters");
 
+        var rWait = runContext.render(wait).as(Boolean.class).orElse(false);
+        Duration rWaitTimeout = null;
+        Duration rPollInterval = null;
+        Boolean rCancelOnTimeout = null;
+        List<BuildResult> rAllowedStatuses = null;
+        if (Boolean.TRUE.equals(rWait)) {
+            rWaitTimeout = runContext.render(waitTimeout).as(Duration.class).orElse(Duration.ofMinutes(10));
+            if (rWaitTimeout.isNegative() || rWaitTimeout.isZero()) {
+                throw new IllegalArgumentException("waitTimeout must be positive, got: " + rWaitTimeout);
+            }
+
+            rPollInterval = runContext.render(pollInterval).as(Duration.class).orElse(Duration.ofSeconds(2));
+            if (rPollInterval.isNegative() || rPollInterval.isZero()) {
+                throw new IllegalArgumentException("pollInterval must be positive, got: " + rPollInterval);
+            }
+            rCancelOnTimeout = runContext.render(cancelOnTimeout).as(Boolean.class).orElse(false);
+            rAllowedStatuses = runContext.render(allowedStatuses).asList(BuildResult.class);
+        }
+
         var requestBuilder = HttpRequest.builder()
             .uri(uri)
             .addHeader("Content-Type", ContentType.APPLICATION_FORM_URLENCODED.getMimeType())
@@ -217,8 +236,6 @@ public class JobBuild extends AbstractJenkins implements RunnableTask<JobBuild.O
                 queueId = Long.parseLong(matcher.group(1));
             }
         }
-
-        var rWait = runContext.render(wait).as(Boolean.class).orElse(false);
 
         if (!Boolean.TRUE.equals(rWait)) {
             Integer buildNumber = null;
@@ -249,18 +266,6 @@ public class JobBuild extends AbstractJenkins implements RunnableTask<JobBuild.O
 
         final Long finalQueueId = queueId;
         killable.set(() -> cancelQueueItem(runContext, rServerUrl, finalQueueId, logger));
-
-        var rWaitTimeout = runContext.render(waitTimeout).as(Duration.class).orElse(Duration.ofMinutes(10));
-        if (rWaitTimeout.isNegative() || rWaitTimeout.isZero()) {
-            throw new IllegalArgumentException("waitTimeout must be positive, got: " + rWaitTimeout);
-        }
-
-        var rPollInterval = runContext.render(pollInterval).as(Duration.class).orElse(Duration.ofSeconds(2));
-        if (rPollInterval.isNegative() || rPollInterval.isZero()) {
-            throw new IllegalArgumentException("pollInterval must be positive, got: " + rPollInterval);
-        }
-        var rCancelOnTimeout = runContext.render(cancelOnTimeout).as(Boolean.class).orElse(false);
-        var rAllowedStatuses = runContext.render(allowedStatuses).asList(BuildResult.class);
 
         var start = Instant.now();
         var buildDetails = waitForQueueItem(runContext, rServerUrl, queueId, start, rWaitTimeout, rPollInterval, rCancelOnTimeout, logger);

@@ -1,8 +1,8 @@
 package io.kestra.plugin.jenkins;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
-import java.util.Objects;
 import java.util.stream.Collectors;
 
 import com.fasterxml.jackson.databind.DeserializationFeature;
@@ -106,9 +106,13 @@ public abstract class AbstractJenkins extends Task {
                 .status(response.getStatus())
                 .build();
         } catch (HttpClientResponseException e) {
+            var statusCode = e.getResponse() != null ? e.getResponse().getStatus().getCode() : -1;
+            var bodyObj = e.getResponse() != null ? e.getResponse().getBody() : null;
+            var bodyStr = bodyObj instanceof byte[] bytes
+                ? new String(bytes, StandardCharsets.UTF_8)
+                : String.valueOf(bodyObj);
             throw new HttpClientResponseException(
-                "Request failed '" + Objects.requireNonNull(e.getResponse()).getStatus().getCode() +
-                    "' and body '" + e.getResponse().getBody() + "'",
+                "Request failed '" + statusCode + "' and body '" + bodyStr + "'",
                 e.getResponse()
             );
         } catch (IOException e) {
