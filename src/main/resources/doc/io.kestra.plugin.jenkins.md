@@ -14,9 +14,9 @@ Triggers a Jenkins job via `buildWithParameters`:
 - `parameters`: Optional map of build parameter names to values.
 - `wait`: Set to `true` to block until the build finishes.
 - `waitTimeout`: Maximum duration to wait before timing out (defaults to `PT10M`).
-- `pollInterval`: Polling frequency (minimum 1s, defaults to `PT2S`).
+- `pollInterval`: Polling frequency (defaults to `PT2S`).
 - `cancelOnTimeout`: Set to `true` to cancel the queued item or stop the build on timeout.
-- `allowedStatuses`: List of acceptable build results when `wait` is true (defaults to `['SUCCESS']`).
+- `allowedStatuses`: List of acceptable `BuildResult` values when `wait` is true (defaults to `[SUCCESS]`).
 Outputs `status`, `queueId`, `buildNumber`, `buildUrl`, `result`, and `info`.
 
 ### JobInfo
@@ -43,4 +43,4 @@ Polling trigger that evaluates Jenkins builds for a specific job:
 - `result`: Optional filter by `BuildResult`.
 - `initialBuildNumber`: Optional starting build number to avoid re-firing older runs.
 Tracks progress using a length-prefixed SHA-256 watermark in the namespace KV store to guarantee exactly-once firing, holding back evaluations until all lower in-progress builds complete.
-Outputs `buildNumber`, `buildUrl`, `result`, `duration`, `timestamp`, `fullDisplayName`, `build`, and `builds`.
+Outputs `buildNumber`, `buildUrl`, `result`, `duration`, `timestamp`, `fullDisplayName`, and `builds`.

@@ -13,7 +13,6 @@ import org.apache.hc.core5.http.ContentType;
 import org.slf4j.Logger;
 
 import io.kestra.core.http.HttpRequest;
-import io.kestra.core.http.HttpResponse;
 import io.kestra.core.http.client.HttpClientResponseException;
 import io.kestra.core.models.annotations.Example;
 import io.kestra.core.models.annotations.Plugin;
@@ -132,7 +131,7 @@ public class JobBuild extends AbstractJenkins implements RunnableTask<JobBuild.O
     @Schema(
         title = "Polling interval",
         description = """
-            Frequency at which to poll the queue item and build endpoint when `wait` is true. Minimum duration is 1 second. Defaults to `PT2S`.
+            Frequency at which to poll the queue item and build endpoint when `wait` is true. Defaults to `PT2S`.
             """
     )
     @Builder.Default
@@ -162,12 +161,12 @@ public class JobBuild extends AbstractJenkins implements RunnableTask<JobBuild.O
     @Schema(
         title = "Allowed success statuses",
         description = """
-            List of acceptable build results when `wait` is true. Defaults to `['SUCCESS']`.
+            List of acceptable build results when `wait` is true: `SUCCESS`, `UNSTABLE`, `FAILURE`, `NOT_BUILT`, or `ABORTED`. Defaults to `['SUCCESS']`.
             """
     )
     @Builder.Default
     @PluginProperty(group = "advanced")
-    private Property<List<String>> allowedStatuses = Property.ofValue(List.of("SUCCESS"));
+    private Property<List<BuildResult>> allowedStatuses = Property.ofValue(List.of(BuildResult.SUCCESS));
 
     @Override
     public void kill() {
@@ -185,15 +184,15 @@ public class JobBuild extends AbstractJenkins implements RunnableTask<JobBuild.O
     public Output run(RunContext runContext) throws Exception {
         var logger = runContext.logger();
 
-        var rJobName = runContext.render(jobName).as(String.class).orElseThrow();
-        var renderedParams = runContext.render(parameters).asMap(String.class, Object.class);
+        var rJobName = runContext.render(jobName).as(String.class).orElseThrow(() -> new IllegalArgumentException("jobName is required"));
+        var rParameters = runContext.render(parameters).asMap(String.class, Object.class);
 
         var jobPath = encodeJobPath(rJobName);
 
         var rServerUrl = runContext.render(serverUrl)
             .as(String.class)
             .map(u -> u.endsWith("/") ? u : u + "/")
-            .orElseThrow();
+            .orElseThrow(() -> new IllegalArgumentException("serverUrl is required"));
 
         var uri = URI.create(rServerUrl + jobPath + "/buildWithParameters");
 
@@ -201,9 +200,9 @@ public class JobBuild extends AbstractJenkins implements RunnableTask<JobBuild.O
             .uri(uri)
             .addHeader("Content-Type", ContentType.APPLICATION_FORM_URLENCODED.getMimeType())
             .method("POST")
-            .body(HttpRequest.UrlEncodedRequestBody.builder().content(renderedParams != null ? renderedParams : Collections.emptyMap()).build());
+            .body(HttpRequest.UrlEncodedRequestBody.builder().content(rParameters != null ? rParameters : Collections.emptyMap()).build());
 
-        HttpResponse<Void> response = this.request(runContext, requestBuilder, Void.class);
+        var response = this.request(runContext, requestBuilder, Void.class);
 
         logger.info("Triggered job '{}' with status code: {}", rJobName, response.getStatus().getCode());
 
@@ -261,7 +260,7 @@ public class JobBuild extends AbstractJenkins implements RunnableTask<JobBuild.O
             throw new IllegalArgumentException("pollInterval must be positive, got: " + rPollInterval);
         }
         var rCancelOnTimeout = runContext.render(cancelOnTimeout).as(Boolean.class).orElse(false);
-        var rAllowedStatuses = runContext.render(allowedStatuses).asList(String.class);
+        var rAllowedStatuses = runContext.render(allowedStatuses).asList(BuildResult.class);
 
         var start = Instant.now();
         var buildDetails = waitForQueueItem(runContext, rServerUrl, queueId, start, rWaitTimeout, rPollInterval, rCancelOnTimeout, logger);
@@ -277,7 +276,7 @@ public class JobBuild extends AbstractJenkins implements RunnableTask<JobBuild.O
 
         if (rAllowedStatuses != null && !rAllowedStatuses.isEmpty()) {
             final String finalResult = result;
-            var allowed = rAllowedStatuses.stream().anyMatch(s -> s.equalsIgnoreCase(finalResult));
+            var allowed = rAllowedStatuses.stream().anyMatch(s -> s.name().equalsIgnoreCase(finalResult));
             if (!allowed) {
                 throw new IllegalStateException("Jenkins build #" + buildNumber + " completed with result '" + result + "', but expected one of " + rAllowedStatuses);
             }
@@ -313,11 +312,9 @@ public class JobBuild extends AbstractJenkins implements RunnableTask<JobBuild.O
             try {
                 queueItem = getQueueItem(runContext, rServerUrl, queueId);
             } catch (HttpClientResponseException e) {
-                if (
-                    e.getResponse() != null && e.getResponse().getStatus() != null &&
-                        (e.getResponse().getStatus().getCode() == 401 || e.getResponse().getStatus().getCode() == 403)
-                ) {
-                    throw new IllegalStateException("Authentication or authorization failed while polling Jenkins queue " + queueId + ": " + e.getMessage(), e);
+                var code = e.getResponse() != null && e.getResponse().getStatus() != null ? e.getResponse().getStatus().getCode() : null;
+                if (code != null && code >= 400 && code < 500 && code != 404) {
+                    throw new IllegalStateException("Client error (" + code + ") while polling Jenkins queue item " + queueId + ": " + e.getMessage(), e);
                 }
                 logger.warn("Transient error while waiting for queue item {}: {}", queueId, e.getMessage());
                 queueItem = null;
@@ -373,11 +370,9 @@ public class JobBuild extends AbstractJenkins implements RunnableTask<JobBuild.O
             try {
                 buildInfo = getBuildInfo(runContext, rServerUrl, jobPath, buildNumber);
             } catch (HttpClientResponseException e) {
-                if (
-                    e.getResponse() != null && e.getResponse().getStatus() != null &&
-                        (e.getResponse().getStatus().getCode() == 401 || e.getResponse().getStatus().getCode() == 403)
-                ) {
-                    throw new IllegalStateException("Authentication or authorization failed while polling Jenkins build #" + buildNumber + ": " + e.getMessage(), e);
+                var code = e.getResponse() != null && e.getResponse().getStatus() != null ? e.getResponse().getStatus().getCode() : null;
+                if (code != null && code >= 400 && code < 500) {
+                    throw new IllegalStateException("Client error (" + code + ") while polling Jenkins build #" + buildNumber + ": " + e.getMessage(), e);
                 }
                 logger.warn("Transient error while waiting for build #{}: {}", buildNumber, e.getMessage());
                 buildInfo = null;

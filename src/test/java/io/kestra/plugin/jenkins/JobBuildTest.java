@@ -231,7 +231,7 @@ class JobBuildTest {
             .wait(Property.ofValue(true))
             .pollInterval(Property.ofValue(Duration.ofMillis(50)))
             .waitTimeout(Property.ofValue(Duration.ofSeconds(5)))
-            .allowedStatuses(Property.ofValue(List.of("SUCCESS")))
+            .allowedStatuses(Property.ofValue(List.of(BuildResult.SUCCESS)))
             .build();
 
         assertThrows(IllegalStateException.class, () -> jobBuild.run(runContext));

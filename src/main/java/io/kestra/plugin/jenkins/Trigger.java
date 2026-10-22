@@ -39,6 +39,7 @@ import lombok.experimental.SuperBuilder;
     title = "Wait for a Jenkins build to complete",
     description = """
         Periodically polls Jenkins for completed builds on a specific job, advancing a watermark in the namespace KV store to guarantee exactly-once firing.
+        Flat output properties describe the lowest matching completed build, while `builds` delivers newly completed matching builds in ascending order.
         """
 )
 @Plugin(
@@ -156,10 +157,10 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
         var runContext = conditionContext.getRunContext();
         var logger = runContext.logger();
 
-        var rServerUrl = runContext.render(serverUrl).as(String.class).orElseThrow();
+        var rServerUrl = runContext.render(serverUrl).as(String.class).orElseThrow(() -> new IllegalArgumentException("serverUrl is required"));
         var rBase = rServerUrl.endsWith("/") ? rServerUrl : rServerUrl + "/";
 
-        var rJobName = runContext.render(jobName).as(String.class).orElseThrow();
+        var rJobName = runContext.render(jobName).as(String.class).orElseThrow(() -> new IllegalArgumentException("jobName is required"));
         var rResult = result != null ? runContext.render(result).as(BuildResult.class).orElse(null) : null;
         var rInitialBuild = initialBuildNumber != null ? runContext.render(initialBuildNumber).as(Integer.class).orElse(null) : null;
 
@@ -284,7 +285,6 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
             .duration(target.getDuration())
             .timestamp(target.getTimestamp())
             .fullDisplayName(target.getFullDisplayName())
-            .build(target)
             .builds(matchingBuilds)
             .build();
 
@@ -351,10 +351,7 @@ public class Trigger extends AbstractTrigger implements PollingTriggerInterface,
         @Schema(title = "Full display name of the build")
         private final String fullDisplayName;
 
-        @Schema(title = "Primary build that triggered execution")
-        private final ListBuilds.BuildSummary build;
-
-        @Schema(title = "All completed builds available at evaluation time")
+        @Schema(title = "Newly completed matching builds in ascending order")
         private final List<ListBuilds.BuildSummary> builds;
     }
 }

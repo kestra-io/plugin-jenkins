@@ -115,10 +115,10 @@ public class ListBuilds extends AbstractJenkins implements RunnableTask<ListBuil
     @Override
     @SuppressWarnings("unchecked")
     public Output run(RunContext runContext) throws Exception {
-        var rServerUrl = runContext.render(serverUrl).as(String.class).orElseThrow();
+        var rServerUrl = runContext.render(serverUrl).as(String.class).orElseThrow(() -> new IllegalArgumentException("serverUrl is required"));
         var rBase = rServerUrl.endsWith("/") ? rServerUrl : rServerUrl + "/";
 
-        var rJobName = runContext.render(jobName).as(String.class).orElseThrow();
+        var rJobName = runContext.render(jobName).as(String.class).orElseThrow(() -> new IllegalArgumentException("jobName is required"));
         var rFetchType = runContext.render(fetchType).as(FetchType.class).orElse(FetchType.FETCH);
         var rResult = result != null ? runContext.render(result).as(BuildResult.class).orElse(null) : null;
         var rSince = since != null ? runContext.render(since).as(Instant.class).orElse(null) : null;
@@ -169,14 +169,14 @@ public class ListBuilds extends AbstractJenkins implements RunnableTask<ListBuil
                 }
             }
             case STORE -> {
-                if (!builds.isEmpty()) {
-                    File tempFile = runContext.workingDir().createTempFile(".ion").toFile();
-                    try (var fileWriter = new BufferedWriter(new FileWriter(tempFile), FileSerde.BUFFER_SIZE)) {
+                File tempFile = runContext.workingDir().createTempFile(".ion").toFile();
+                try (var fileWriter = new BufferedWriter(new FileWriter(tempFile), FileSerde.BUFFER_SIZE)) {
+                    if (!builds.isEmpty()) {
                         Flux<BuildSummary> flux = Flux.fromIterable(builds);
                         FileSerde.writeAll(fileWriter, flux).block();
                     }
-                    outputBuilder.uri(runContext.storage().putFile(tempFile));
                 }
+                outputBuilder.uri(runContext.storage().putFile(tempFile));
             }
             case FETCH -> {
                 outputBuilder.builds(builds);

@@ -100,10 +100,10 @@ public class JobInfo extends AbstractJenkins implements RunnableTask<JobInfo.Out
 
     @Override
     public Output run(RunContext runContext) throws Exception {
-        var rServerUrl = runContext.render(serverUrl).as(String.class).orElseThrow();
+        var rServerUrl = runContext.render(serverUrl).as(String.class).orElseThrow(() -> new IllegalArgumentException("serverUrl is required"));
         var rBase = rServerUrl.endsWith("/") ? rServerUrl : rServerUrl + "/";
 
-        var rJobName = runContext.render(jobName).as(String.class).orElseThrow();
+        var rJobName = runContext.render(jobName).as(String.class).orElseThrow(() -> new IllegalArgumentException("jobName is required"));
         var rBuild = runContext.render(buildNumber).as(String.class).orElse("lastBuild");
 
         if (!rBuild.matches("^\\d+$") && !ALLOWED_ALIASES.contains(rBuild)) {
