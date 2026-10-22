@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test;
 
 import com.github.tomakehurst.wiremock.junit5.WireMockRuntimeInfo;
 import com.github.tomakehurst.wiremock.junit5.WireMockTest;
+import com.github.tomakehurst.wiremock.stubbing.Scenario;
 
 import io.kestra.core.junit.annotations.KestraTest;
 import io.kestra.core.models.property.Property;
@@ -372,5 +373,129 @@ class JobBuildTest {
 
         assertThrows(TimeoutException.class, () -> jobBuild.run(runContext));
         verify(postRequestedFor(urlEqualTo("/job/test-job/17/stop")));
+    }
+
+    @Test
+    void triggerJenkinsJobBuildPolling400FailsFast(WireMockRuntimeInfo wm) throws Exception {
+        stubFor(
+            post(urlEqualTo("/job/test-job/buildWithParameters"))
+                .willReturn(
+                    aResponse()
+                        .withStatus(201)
+                        .withHeader("Location", wm.getHttpBaseUrl() + "/queue/item/110/")
+                )
+        );
+
+        stubFor(
+            get(urlEqualTo("/queue/item/110/api/json"))
+                .willReturn(
+                    okJson("""
+                        {
+                          "id": 110,
+                          "executable": {
+                            "number": 20,
+                            "url": "http://localhost:8082/job/test-job/20/"
+                          }
+                        }
+                        """)
+                )
+        );
+
+        stubFor(
+            get(urlEqualTo("/job/test-job/20/api/json"))
+                .willReturn(
+                    aResponse()
+                        .withStatus(400)
+                        .withBody("Bad Request")
+                )
+        );
+
+        RunContext runContext = runContextFactory.of(Map.of());
+
+        JobBuild jobBuild = JobBuild.builder()
+            .jobName(Property.ofValue("test-job"))
+            .serverUrl(Property.ofValue(wm.getHttpBaseUrl()))
+            .wait(Property.ofValue(true))
+            .pollInterval(Property.ofValue(Duration.ofMillis(50)))
+            .waitTimeout(Property.ofValue(Duration.ofMinutes(10)))
+            .build();
+
+        long start = System.currentTimeMillis();
+        var ex = assertThrows(IllegalStateException.class, () -> jobBuild.run(runContext));
+        long duration = System.currentTimeMillis() - start;
+
+        assertThat(ex.getMessage(), containsString("Client error (400)"));
+        assertThat("Should fail fast rather than waiting for 10m timeout", duration, lessThan(5000L));
+    }
+
+    @Test
+    void triggerJenkinsJobQueueItem404IsRetriedUntilAllocated(WireMockRuntimeInfo wm) throws Exception {
+        stubFor(
+            post(urlEqualTo("/job/test-job/buildWithParameters"))
+                .willReturn(
+                    aResponse()
+                        .withStatus(201)
+                        .withHeader("Location", wm.getHttpBaseUrl() + "/queue/item/120/")
+                )
+        );
+
+        // First poll: 404 while Jenkins queue allocates
+        stubFor(
+            get(urlEqualTo("/queue/item/120/api/json"))
+                .inScenario("Queue404Retry")
+                .whenScenarioStateIs(Scenario.STARTED)
+                .willReturn(
+                    aResponse()
+                        .withStatus(404)
+                        .withBody("Not Found")
+                )
+                .willSetStateTo("ALLOCATED")
+        );
+
+        // Second poll: queue item is allocated with build #25
+        stubFor(
+            get(urlEqualTo("/queue/item/120/api/json"))
+                .inScenario("Queue404Retry")
+                .whenScenarioStateIs("ALLOCATED")
+                .willReturn(
+                    okJson("""
+                        {
+                          "id": 120,
+                          "executable": {
+                            "number": 25,
+                            "url": "http://localhost:8082/job/test-job/25/"
+                          }
+                        }
+                        """)
+                )
+        );
+
+        stubFor(
+            get(urlEqualTo("/job/test-job/25/api/json"))
+                .willReturn(
+                    okJson("""
+                        {
+                          "number": 25,
+                          "building": false,
+                          "result": "SUCCESS"
+                        }
+                        """)
+                )
+        );
+
+        RunContext runContext = runContextFactory.of(Map.of());
+
+        JobBuild jobBuild = JobBuild.builder()
+            .jobName(Property.ofValue("test-job"))
+            .serverUrl(Property.ofValue(wm.getHttpBaseUrl()))
+            .wait(Property.ofValue(true))
+            .pollInterval(Property.ofValue(Duration.ofMillis(50)))
+            .waitTimeout(Property.ofValue(Duration.ofSeconds(5)))
+            .build();
+
+        JobBuild.Output output = jobBuild.run(runContext);
+
+        assertThat(output.getBuildNumber(), is(25));
+        assertThat(output.getResult(), is("SUCCESS"));
     }
 }

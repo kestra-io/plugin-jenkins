@@ -200,4 +200,39 @@ class ListBuildsTest {
             assertThat(lines, is(3L));
         }
     }
+
+    @Test
+    void listBuildsStoreEmptyReturnsUriWithSizeZero(WireMockRuntimeInfo wm) throws Exception {
+        stubFor(
+            get(urlMatching("/job/test-job/api/json\\?tree=builds.*"))
+                .willReturn(
+                    okJson("""
+                        {
+                          "builds": []
+                        }
+                        """)
+                )
+        );
+
+        RunContext runContext = runContextFactory.of(Map.of());
+
+        ListBuilds task = ListBuilds.builder()
+            .jobName(Property.ofValue("test-job"))
+            .serverUrl(Property.ofValue(wm.getHttpBaseUrl()))
+            .fetchType(Property.ofValue(FetchType.STORE))
+            .build();
+
+        ListBuilds.Output output = task.run(runContext);
+
+        assertThat(output.getSize(), is(0));
+        assertThat(output.getUri(), notNullValue());
+
+        try (
+            var is = runContext.storage().getFile(output.getUri());
+            var reader = new BufferedReader(new InputStreamReader(is))
+        ) {
+            long lines = reader.lines().count();
+            assertThat(lines, is(0L));
+        }
+    }
 }
