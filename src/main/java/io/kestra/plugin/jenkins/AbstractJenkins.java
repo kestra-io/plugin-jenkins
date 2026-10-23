@@ -1,8 +1,8 @@
 package io.kestra.plugin.jenkins;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
-import java.util.Objects;
 import java.util.stream.Collectors;
 
 import com.fasterxml.jackson.databind.DeserializationFeature;
@@ -41,33 +41,45 @@ public abstract class AbstractJenkins extends Task {
     @NotNull
     @Schema(
         title = "Set Jenkins base URL",
-        description = "Base HTTP(S) endpoint for the Jenkins instance; trailing slash optional and defaults are rendered from Flow variables (e.g., http://jenkins.example.com:8080)"
+        description = """
+            Base HTTP(S) endpoint for the Jenkins instance; trailing slash optional and defaults are rendered from Flow variables (e.g., http://jenkins.example.com:8080).
+            """
     )
     @PluginProperty(group = "main")
     protected Property<String> serverUrl;
 
     @Schema(
         title = "Jenkins username",
-        description = "Optional username used for Basic Auth when the server is secured"
+        description = """
+            Optional username used for Basic Auth when the server is secured.
+            """
     )
+    @ToString.Exclude
+    @EqualsAndHashCode.Exclude
     @PluginProperty(secret = true, group = "connection")
     private Property<String> username;
 
     @Schema(
         title = "API token",
-        description = "Jenkins API token or password paired with the username for Basic Auth"
+        description = """
+            Jenkins API token or password paired with the username for Basic Auth.
+            """
     )
+    @ToString.Exclude
+    @EqualsAndHashCode.Exclude
     @PluginProperty(group = "connection", secret = true)
     private Property<String> apiToken;
 
     @Schema(
         title = "HTTP client options",
-        description = "Optional overrides for HTTP timeouts, proxies, or headers; merged with Basic Auth credentials"
+        description = """
+            Optional overrides for HTTP timeouts, proxies, or headers; merged with Basic Auth credentials.
+            """
     )
     @PluginProperty(group = "advanced")
     private HttpConfiguration options;
 
-    protected static String encodeJobPath(String jobName) {
+    public static String encodeJobPath(String jobName) {
         return Arrays.stream(jobName.split("/"))
             .map(segment -> "job/" + UrlEscapers.urlPathSegmentEscaper().escape(segment))
             .collect(Collectors.joining("/"));
@@ -94,9 +106,17 @@ public abstract class AbstractJenkins extends Task {
                 .status(response.getStatus())
                 .build();
         } catch (HttpClientResponseException e) {
+            var statusCode = e.getResponse() != null ? e.getResponse().getStatus().getCode() : -1;
+            var bodyObj = e.getResponse() != null ? e.getResponse().getBody() : null;
+            var bodyStr = bodyObj instanceof byte[] bytes
+                ? new String(bytes, StandardCharsets.UTF_8)
+                : String.valueOf(bodyObj);
+            if (bodyStr != null && bodyStr.length() > 1000) {
+                var totalBytes = bodyObj instanceof byte[] bytes ? bytes.length : bodyStr.getBytes(StandardCharsets.UTF_8).length;
+                bodyStr = bodyStr.substring(0, 1000) + "... (truncated, " + totalBytes + " bytes)";
+            }
             throw new HttpClientResponseException(
-                "Request failed '" + Objects.requireNonNull(e.getResponse()).getStatus().getCode() +
-                    "' and body '" + e.getResponse().getBody() + "'",
+                "Request failed '" + statusCode + "' and body '" + bodyStr + "'",
                 e.getResponse()
             );
         } catch (IOException e) {
